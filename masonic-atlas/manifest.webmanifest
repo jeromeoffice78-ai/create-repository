@@ -1,0 +1,11 @@
+{
+"name":"Masonic Atlas — Freemasonry Encyclopedia",
+"short_name":"Masonic Atlas",
+"description":"A sourced public-information Freemasonry encyclopedia with real archival media.",
+"start_url":"./",
+"scope":"./",
+"display":"standalone",
+"background_color":"#0a1226",
+"theme_color":"#0a1226",
+"icons":[{"src":"./icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}
