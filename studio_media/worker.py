@@ -350,7 +350,7 @@ def notify(job_id, request, status, result=None, error=''):
     if target.scheme != 'https' or not (target.hostname or '').endswith('.bubbleapps.io'):
         update(job_id, callback_error='Invalid fixed Bubble callback host')
         return
-    body = dict(job_id=request['job'], provider_id=job_id, status=status, error=error)
+    body = dict(job_id=request['job'], provider_id=job_id, status=status, error=error, format='mp4')
     if result:
         body.update({k: result[k] for k in ('duration', 'frames', 'fps', 'width', 'height')})
         body['output'] = signed_output(job_id)
@@ -506,7 +506,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(413, {'error': 'Manifest size must be 1 byte to 1 MB'})
             job_id = enqueue(json.loads(self.rfile.read(length)))
             job = get_job(job_id)
-            return self.send_json(202, {'job_id': job_id, 'status': job['status']})
+            return self.send_json(202, {'job_id': job_id, 'status': job['status'], 'output': '', 'error': ''})
         except (ValueError, TypeError) as exc:
             return self.send_json(422, {'error': str(exc) if isinstance(exc, MediaError) else 'Malformed JSON manifest'})
 
