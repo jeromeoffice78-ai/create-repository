@@ -164,5 +164,72 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(send.call_count,2)
 
 
+    def test_authenticated_status_polling_by_bubble_source_id(self):
+        from http.server import ThreadingHTTPServer
+        from urllib.request import Request, urlopen
+        from urllib.error import HTTPError
+        from threading import Thread
+        from urllib.parse import quote
+
+        source_job = 'episode-two-render'
+        original = self.request()
+        original['job'] = source_job
+        with patch.object(worker.POOL, 'submit'):
+            first = worker.enqueue(original)
+        (Path(self.temp.name) / first).mkdir()
+        (Path(self.temp.name) / first / 'output.mp4').write_bytes(b'fixture')
+        worker.update(first, status='Completed', result=json.dumps({
+            'duration': 1, 'fps': 24, 'frames': 24,
+            'width': 1920, 'height': 1080, 'has_audio': True
+        }))
+
+        # A second request with the same stable Bubble job ID is the newest.
+        changed = self.request()
+        changed['job'] = source_job
+        changed['payload']['shots'][0]['caption'] = 'Updated storyboard'
+        with patch.object(worker.POOL, 'submit'):
+            second = worker.enqueue(changed)
+        self.assertNotEqual(first, second)
+
+        with patch.object(worker, 'TOKEN', 'test-private-token'):
+            server = ThreadingHTTPServer(('127.0.0.1', 0), worker.Handler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base = f'http://127.0.0.1:{server.server_port}'
+
+            def read(path, authenticated=True):
+                headers = {'Authorization': 'Bearer test-private-token'} if authenticated else {}
+                with urlopen(Request(base + path, headers=headers), timeout=10) as response:
+                    return json.load(response)
+
+            try:
+                path = '/jobs/latest?source_job=' + quote(source_job)
+                with self.assertRaises(HTTPError) as unauthorized:
+                    read(path, authenticated=False)
+                self.assertEqual(unauthorized.exception.code, 401)
+                self.assertEqual(read(path)['job_id'], second)
+                self.assertEqual(read(path)['status'], 'Queued')
+                self.assertEqual(read('/jobs/' + first)['status'], 'Completed')
+                with self.assertRaises(HTTPError) as missing:
+                    read('/jobs/latest?source_job=does-not-exist')
+                self.assertEqual(missing.exception.code, 404)
+                with self.assertRaises(HTTPError) as malformed:
+                    read('/jobs/latest')
+                self.assertEqual(malformed.exception.code, 422)
+
+                # A vanished output must not be advertised to Bubble.
+                (Path(self.temp.name) / first / 'output.mp4').unlink()
+                state = read('/jobs/' + first)
+                self.assertEqual(state['status'], 'Failed')
+                self.assertEqual(state['output'], '')
+                self.assertIn('missing', state['error'])
+                self.assertEqual(state['source_job'], source_job)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=10)
+
+
+
 if __name__ == '__main__':
     unittest.main()
