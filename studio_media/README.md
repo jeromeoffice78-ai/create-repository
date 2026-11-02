@@ -88,3 +88,17 @@ The configured Wan2.2 image-to-video Space generates at **16 FPS**, with a maxim
 The worker now rejects missing or malformed `image_url`, `video_url` and `audio_url` fields before queueing a GPU request; an image-to-video request over five seconds is also rejected before queueing. Lip-sync first downloads and probes actual driving audio, rejects missing audio and durations above eight seconds rather than letting the provider silently truncate speech. Clip durations and errors are available through the status endpoint. Longer dialogue must be split into multiple clips and assembled with correctly timed audio; this is not automatic scene generation.
 
 No third-party model availability, likeness preservation, acting, or complete-episode verification is implied by a passing adapter test.
+
+
+## Secure live render viewer (v1.4)
+
+The worker can now display the real render status and a completed MP4 in a phone or desktop browser without exposing the service bearer token to client-side JavaScript. This is an *optional rendering monitor*, not a replacement for the Bubble project.
+
+- When Bubble's **private/server-side** API Connector submits \`POST /jobs\`, the 202 response now includes \`viewer_url\` in addition to the unchanged \`job_id\`, \`source_job\`, \`status\`, \`progress\` and \`stage\`. Authenticated \`GET /jobs/{job_id}\` or \`GET /jobs/latest?source_job=...\` also include a fresh \`viewer_url\`.
+- Open \`viewer_url\` to see a scoped, read-only, mobile-friendly monitor. It polls status every five seconds, displays actual stage/progress, and shows a playable/downloadable MP4 **only after** final verification succeeds.
+- Viewer links are HMAC-signed, scoped to one unpredictable worker job, expire after one hour, and are not reusable for other jobs. The viewer discloses no private API token, raw media inputs, callback secrets or unrelated job records. Viewer HTML is not cached and uses a no-referrer policy. The signed MP4 URL expires separately and still depends on ephemeral storage.
+- The original Bubble studio host \`the-last-repair-studio.bubbleapps.io\` is allowed to frame this read-only viewer. You still need to **initialize the updated API response and bind** the returned \`viewer_url\` to the existing Bubble viewer's iframe/link, or launch the viewer link directly from the render submission result. Bubble's workflow edit cannot be completed by the worker deployment.
+- Viewer link expiration can be resolved with a fresh **authenticated** status read from Bubble's API Connector. Never paste a private server token into HTML, an iframe, a page action, or a public database field.
+- If \`durable_storage=false\`, the viewer warns that the MP4 is temporary. Copy a completed file to controlled persistent storage before any restart; this feature does **not** provide automatic archival.
+
+Acceptance: check the worker's live deployment, submit a real approved source clip through Bubble, open its signed \`viewer_url\`, observe stage changes, verify real playback, and confirm protected/error/expired links fail. Only then mark the Bubble end-to-end viewer as complete.
