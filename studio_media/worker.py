@@ -311,6 +311,21 @@ def file_data(url):
     return {'path': url, 'url': url, 'meta': {'_type': 'gradio.FileData'}}
 
 
+def validate_lipsync_audio(payload, folder, fetch=download):
+    """Fail closed before upstream silently truncates its eight-second audio cap."""
+    source = payload.get('audio_url', '')
+    if not isinstance(source, str) or not source:
+        raise MediaError('Lip Sync requires a real audio_url')
+    destination = folder / 'lip-sync-audio-check.input'
+    fetch(source, destination)
+    info = probe(destination)
+    if not info['has_audio'] or info['duration'] <= 0:
+        raise MediaError('Lip Sync requires a playable driving audio file')
+    if info['duration'] > 8.0:
+        raise MediaError('Lip Sync provider supports at most 8 seconds of audio; split long dialogue into shorter clips')
+    return info
+
+
 def output_url(value):
     if isinstance(value, dict):
         for key in ('url', 'video', 'audio'):
@@ -447,7 +462,13 @@ def process(job_id, request):
                         4, str(payload.get('negative_prompt', 'distorted face, deformed hands, text, watermark')),
                         duration, 1, 1, int(payload.get('seed', 42)), False])
             elif kind == 'Lip Sync':
-                response = gradio(LIP, 'lip_sync', [file_data(payload.get('video_url', '')), file_data(payload.get('audio_url', '')), int(payload.get('seed', 42))])
+                video_url, audio_url = payload.get('video_url', ''), payload.get('audio_url', '')
+                file_data(video_url)
+                file_data(audio_url)
+                update(job_id, progress=15, stage='Validating lip-sync audio duration')
+                validate_lipsync_audio(payload, folder)
+                update(job_id, progress=20, stage='Waiting for lip-sync GPU provider')
+                response = gradio(LIP, 'lip_sync', [file_data(video_url), file_data(audio_url), int(payload.get('seed', 42))])
             else:
                 raise MediaError('Unsupported operation')
             update(job_id, progress=65, stage='Downloading generated clip')
@@ -489,6 +510,17 @@ def enqueue(request):
             request['payload'] = json.loads(request['payload'])
         except (KeyError, ValueError, TypeError):
             raise MediaError('GPU payload must be JSON, not an unstructured prompt') from None
+    if request['kind'] in ('Video', 'Lip Sync'):
+        payload = request['payload']
+        if not isinstance(payload, dict):
+            raise MediaError('GPU payload must be a JSON object')
+        urls = ('image_url',) if request['kind'] == 'Video' else ('video_url', 'audio_url')
+        for field in urls:
+            if not isinstance(payload.get(field), str) or not payload[field]:
+                raise MediaError(f'{request["kind"]} requires a real {field}')
+            safe_url(payload[field])
+        if request['kind'] == 'Video':
+            number(payload.get('duration', 1), 'GPU duration', .5, 5)
     digest = hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
     with DB_LOCK, db() as c:
         # Signed output links last 24 hours. Expired, inactive outputs are reclaimed.
