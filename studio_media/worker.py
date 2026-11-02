@@ -518,7 +518,7 @@ def recover_jobs():
         for row in c.execute("SELECT * FROM jobs WHERE status IN ('Queued','Processing','Completed')").fetchall():
             if row['status'] == 'Completed':
                 if not (ROOT / row['id'] / 'output.mp4').is_file():
-                    c.execute("UPDATE jobs SET status='Failed',error=? WHERE id=?",
+                    c.execute("UPDATE jobs SET status='Failed',stage='Failed',error=? WHERE id=?",
                               ('Completed media is missing; regenerate from the original production inputs', row['id']))
                 continue
             try:
@@ -526,10 +526,10 @@ def recover_jobs():
                 if not isinstance(request, dict) or not request.get('job') or 'payload' not in request:
                     raise ValueError('Missing saved request')
             except (ValueError, TypeError):
-                c.execute("UPDATE jobs SET status='Failed',error=? WHERE id=?",
+                c.execute("UPDATE jobs SET status='Failed',stage='Failed',error=? WHERE id=?",
                           ('Legacy interrupted job has no saved request; submit it again', row['id']))
                 continue
-            c.execute("UPDATE jobs SET status='Queued',error='' WHERE id=?", (row['id'],))
+            c.execute("UPDATE jobs SET status='Queued',progress=0,stage='Queued after restart',error='' WHERE id=?", (row['id'],))
             pending.append((row['id'], request))
     for job_id, request in pending:
         POOL.submit(process, job_id, request)
@@ -546,8 +546,10 @@ def retry_callbacks():
     for row in rows:
         request = json.loads(row['request_json'])
         if isinstance(request, dict) and request.get('job'):
-            measured = json.loads(row['result']) if row['status'] == 'Completed' else None
-            notify(row['id'], request, row['status'], measured, row['error'])
+            # A lost ephemeral MP4 must not trigger another broken success callback.
+            snapshot = job_response(dict(row))
+            measured = json.loads(row['result']) if snapshot['status'] == 'Completed' else None
+            notify(row['id'], request, snapshot['status'], measured, snapshot['error'])
             count += 1
     return count
 
