@@ -65,3 +65,18 @@ Configure the Bubble API Connector call **server-side/private**. Use the same se
 5. If the page has lost the provider-generated `job_id`, query by `source_job` to recover the latest submission. The endpoint is an API feature, **not** proof that Bubble page workflows have been updated. Verify in Bubble's debugger with a real signed-in studio account before marking that integration complete.
 
 No webhook URL, API token, persistent disk, GPU render provider, or release action is implicitly configured by this change.
+
+## Live stage updates (v1.3.0)
+
+The private polling endpoints `GET /jobs/{job_id}` and `GET /jobs/latest?source_job=<Bubble ProductionJob unique ID>` also return:
+
+- `progress`: integer 0–100, based on media processing milestones rather than fabricated completion times.
+- `stage`: named step such as `Preparing media job`, `Normalizing shot 2 of 4`, `Preparing audio track 1 of 2`, `Encoding final MP4`, `Verifying frame count, audio and format`, `Completed`, or `Failed`.
+- `output_expires_at`: Unix epoch seconds for the returned *signed URL*, or zero if no successful output is available. This is not a durability promise: an ephemeral instance can lose the media sooner.
+- `durable_storage`: true only if Render has an actual mounted volume at the configured data directory.
+
+In Bubble, expose `progress` and `stage` in the live-render monitor using the existing private API Connector call. Poll until `Completed` or `Failed`, and preserve the last stage/error for troubleshooting. Do not show a video or announce a complete episode while its source clips or the final MP4 are missing.
+
+A restart now resets recovered pending jobs to `Queued after restart`, then resumes measured stage updates if the job database and source media remain available. Retried callbacks also check for missing output before notifying Bubble, preventing false `Completed` deliveries from the worker.
+
+These are backend capabilities. Bubble page workflows, authenticated callbacks, permanent storage, approved cast likeness, full-body animation, and 180-second episode verification remain separate acceptance gates.
