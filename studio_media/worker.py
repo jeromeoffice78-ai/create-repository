@@ -31,7 +31,7 @@ WAN = 'https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space'
 LIP = 'https://hugging-apps-lip-forcing.hf.space'
 POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 DB_LOCK = threading.Lock()
-VERSION = '1.3.0'
+VERSION = '1.4.0'
 MAX_DOWNLOAD = 256 * 1024 * 1024
 HOSTS = ('cdn.bubble.io', 'hf.space', 'huggingface.co', 'hf.co', 'amazonaws.com', 'onrender.com')
 
@@ -395,6 +395,7 @@ def job_response(job):
     measured = json.loads(job['result'])
     expiry = int(time.time() + 86400) if job['status'] == 'Completed' else 0
     return dict(job_id=job['id'], source_job=job['source_job'],
+                viewer_url=viewer_url(job['id']),
                 status=job['status'], error=job['error'],
                 progress=job['progress'], stage=job['stage'],
                 output=signed_output(job['id'], expiry) if expiry else '',
@@ -402,6 +403,91 @@ def job_response(job):
                 callback_error=job['callback_error'],
                 callback_attempts=job['callback_attempts'],
                 durable_storage=os.path.ismount(ROOT), **measured)
+
+
+
+VIEWER_HTML = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Drama Studio · Live render</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#10141e;color:#f4f6fb}
+body{margin:0;padding:24px 16px}main{max-width:880px;margin:0 auto}
+h1{font-size:clamp(1.5rem,4vw,2.2rem)}.sub{color:#a7b3c6}
+section{background:#1c2432;padding:22px;border-radius:14px;border:1px solid #37455c}
+.status{font-size:1.15rem;font-weight:600}progress{width:100%;height:24px;accent-color:#69a7ff}
+video{width:100%;max-height:70vh;margin-top:16px;background:#050505;border-radius:8px}
+a{color:#9fc7ff}.error{color:#ffb6ad}.warning{color:#ffdd93}
+footer{color:#94a5ba;font-size:.85rem;margin-top:18px}p{line-height:1.45}
+</style></head><body><main>
+<h1>Drama Series Studio</h1><p class="sub">Live render monitor · Private job link</p>
+<section><p class="status" id="stage" role="status">Connecting to render worker…</p>
+<progress id="bar" max="100" value="0" aria-label="Render progress"></progress>
+<p id="details" class="sub"></p><p id="error" class="error"></p>
+<video id="player" controls playsinline preload="metadata" hidden></video>
+<p id="archive" class="warning" hidden>Temporary render: save this file to your permanent studio archive before the worker restarts.</p>
+<p id="download" hidden><a id="file" href="#" download="studio-render.mp4" rel="noreferrer">Open or download completed MP4</a></p>
+</section><footer>This page shows the render job's real processing milestones. It does not certify character identity, full-body animation, or a completed episode.</footer>
+</main><script>
+"use strict";
+const jobId = location.pathname.split("/").pop();
+const endpoint = "/viewer/state/" + jobId + location.search;
+const stage = document.getElementById("stage");
+const bar = document.getElementById("bar");
+const details = document.getElementById("details");
+const error = document.getElementById("error");
+const player = document.getElementById("player");
+const archive = document.getElementById("archive");
+const download = document.getElementById("download");
+const file = document.getElementById("file");
+let stopped = false;
+async function poll(){
+ if(stopped) return;
+ try {
+   const response = await fetch(endpoint, {cache:"no-store",credentials:"omit",referrerPolicy:"no-referrer"});
+   if(!response.ok) throw Error(response.status === 403 ? "This monitor link expired. Open a fresh link from your studio." : "Status unavailable ("+response.status+").");
+   const data = await response.json();
+   const progress = Math.max(0,Math.min(100,Number(data.progress)||0));
+   bar.value = progress;
+   stage.textContent = String(data.stage || data.status || "Working");
+   details.textContent = String(data.status) + " · " + progress + "%";
+   if(data.status === "Completed" && data.output){
+     const url = new URL(data.output,location.origin);
+     if(url.protocol !== "https:") throw Error("Invalid video delivery URL.");
+     player.src = url.href;
+     file.href = url.href;
+     player.hidden = false; download.hidden = false;
+     archive.hidden = !!data.durable_storage;
+     details.textContent += " · " + String(data.frames || "?") + " frames · " + String(data.fps || "?") + " FPS";
+     stopped = true;
+   }else if(data.status === "Failed"){
+     error.textContent = String(data.error || "Render failed. Check the production inputs.");
+     stopped = true;
+   }else{setTimeout(poll,5000);}
+ }catch(e){
+   stage.textContent = "Monitor unavailable";
+   error.textContent = String(e.message || "Status request failed");
+   stopped = true;
+ }
+}
+poll();
+</script></body></html>"""
+
+
+def viewer_url(job_id, expiry=None):
+    """Short-lived scoped capability; never reveal the worker's bearer secret to browsers."""
+    expiry = int(expiry or time.time() + 3600)
+    digest = hmac.new(TOKEN.encode(), f'viewer:{job_id}:{expiry}'.encode(), hashlib.sha256).hexdigest()
+    return f'{PUBLIC}/viewer/{job_id}?expires={expiry}&signature={digest}'
+
+
+def viewer_authorized(job_id, query):
+    values = urllib.parse.parse_qs(query)
+    expiry = values.get('expires', [''])[0]
+    signature = values.get('signature', [''])[0]
+    if not TOKEN or not expiry.isdigit() or int(expiry) < time.time() or len(signature) != 64:
+        return False
+    expected = hmac.new(TOKEN.encode(), f'viewer:{job_id}:{expiry}'.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature, expected)
 
 
 def signed_output(job_id, expiry=None):
@@ -621,6 +707,34 @@ class Handler(BaseHTTPRequestHandler):
                     'version': VERSION, 'restart_recovery': True,
                     'durable_storage': os.path.ismount(ROOT),
                     'operations': ['Assembly', 'MP4', 'Video', 'Lip Sync']})
+        viewer_match = re.fullmatch(r'/viewer/([a-f0-9]{32})', parsed.path)
+        state_match = re.fullmatch(r'/viewer/state/([a-f0-9]{32})', parsed.path)
+        if viewer_match or state_match:
+            job_id = (viewer_match or state_match)[1]
+            if not viewer_authorized(job_id, parsed.query):
+                return self.send_json(403, {'error': 'Invalid or expired viewer link'})
+            job = get_job(job_id)
+            if not job:
+                return self.send_json(404, {'error': 'Unknown job'})
+            if state_match:
+                current = job_response(job)
+                # Only expose media status and delivery; never expose credentials or callbacks.
+                fields = ('status', 'stage', 'progress', 'error', 'output',
+                          'output_expires_at', 'frames', 'duration', 'fps',
+                          'width', 'height', 'has_audio', 'durable_storage')
+                return self.send_json(200, {key: current[key] for key in fields if key in current})
+            raw = VIEWER_HTML.encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Content-Length', str(len(raw)))
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Referrer-Policy', 'no-referrer')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('Content-Security-Policy',
+                "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; media-src 'self' https:; base-uri 'none'; frame-ancestors 'self' https://the-last-repair-studio.bubbleapps.io")
+            self.end_headers()
+            self.wfile.write(raw)
+            return
         match = re.fullmatch(r'/files/([a-f0-9]{32})', parsed.path)
         if match:
             values = urllib.parse.parse_qs(parsed.query)
@@ -666,6 +780,7 @@ class Handler(BaseHTTPRequestHandler):
             job_id = enqueue(json.loads(self.rfile.read(length)))
             job = get_job(job_id)
             return self.send_json(202, {'job_id': job_id, 'source_job': job['source_job'],
+                                        'viewer_url': viewer_url(job_id),
                                         'status': job['status'], 'progress': job['progress'],
                                         'stage': job['stage'], 'output': '', 'error': ''})
         except (ValueError, TypeError) as exc:

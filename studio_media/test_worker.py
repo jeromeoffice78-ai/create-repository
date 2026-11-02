@@ -245,6 +245,86 @@ class RecoveryTests(unittest.TestCase):
 
 
 
+    def test_signed_viewer_displays_only_its_job_without_bearer_secret(self):
+        from http.server import ThreadingHTTPServer
+        from threading import Thread
+        from urllib.parse import urlsplit
+        from urllib.request import Request, urlopen
+        from urllib.error import HTTPError
+        import time
+
+        request = self.request()
+        with patch.object(worker.POOL, 'submit'):
+            job_id = worker.enqueue(request)
+        with patch.object(worker, 'TOKEN', 'in-memory-test-secret'), patch.object(worker, 'PUBLIC', 'https://drama-studio-media-worker.onrender.com'):
+            signed = worker.viewer_url(job_id)
+            path = urlsplit(signed)
+            self.assertNotIn('in-memory-test-secret', signed)
+            self.assertIn('signature=', signed)
+            self.assertFalse(worker.viewer_authorized(job_id, 'expires=123&signature=bogus'))
+            self.assertFalse(worker.viewer_authorized(job_id, urlsplit(worker.viewer_url(job_id, time.time()-10)).query))
+
+            server = ThreadingHTTPServer(('127.0.0.1', 0), worker.Handler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            origin = f'http://127.0.0.1:{server.server_port}'
+
+            def read(url, headers=None, data=None):
+                with urlopen(Request(origin + url, data=data, headers=headers or {}), timeout=10) as response:
+                    return response.status, response.headers, response.read()
+
+            try:
+                # The private job submission returns a usable viewer link.
+                status, _, raw = read('/jobs',
+                    {'Authorization': 'Bearer in-memory-test-secret', 'Content-Type': 'application/json'},
+                    json.dumps(request).encode())
+                self.assertEqual(status, 202)
+                self.assertEqual(json.loads(raw)['viewer_url'].split('?')[0],
+                                 'https://drama-studio-media-worker.onrender.com/viewer/' + job_id)
+
+                view_path = path.path + '?' + path.query
+                status, headers, markup = read(view_path)
+                self.assertEqual(status, 200)
+                self.assertEqual(headers['Referrer-Policy'], 'no-referrer')
+                self.assertEqual(headers['Cache-Control'], 'no-store')
+                self.assertIn(b'Live render monitor', markup)
+                self.assertNotIn(b'in-memory-test-secret', markup)
+
+                state_path = '/viewer/state/' + job_id + '?' + path.query
+                status, _, raw = read(state_path)
+                self.assertEqual(status, 200)
+                state = json.loads(raw)
+                self.assertEqual(state['status'], 'Queued')
+                self.assertEqual(state['progress'], 0)
+                self.assertNotIn('source_job', state)
+                self.assertNotIn('callback_error', state)
+                self.assertNotIn('viewer_url', state)
+
+                with self.assertRaises(HTTPError) as bad:
+                    read('/viewer/state/' + job_id + '?expires=123&signature=abc')
+                self.assertEqual(bad.exception.code, 403)
+                with self.assertRaises(HTTPError) as wrong:
+                    read('/viewer/state/' + '0'*32 + '?' + path.query)
+                self.assertEqual(wrong.exception.code, 403)
+
+                # Completion makes a download available; missing output revokes it.
+                (Path(self.temp.name) / job_id).mkdir()
+                (Path(self.temp.name) / job_id / 'output.mp4').write_bytes(b'fixture')
+                worker.update(job_id, status='Completed', progress=100, stage='Completed',
+                              result=json.dumps({'frames': 24, 'fps':24, 'has_audio':True}))
+                completed = json.loads(read(state_path)[2])
+                self.assertTrue(completed['output'].startswith('https://'))
+                self.assertEqual(completed['frames'],24)
+                (Path(self.temp.name) / job_id / 'output.mp4').unlink()
+                expired = json.loads(read(state_path)[2])
+                self.assertEqual(expired['status'],'Failed')
+                self.assertEqual(expired['output'],'')
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=10)
+
+
     def test_lip_sync_blocks_long_audio_instead_of_truncating(self):
         root = Path(self.temp.name)
         for seconds in (2, 9):
