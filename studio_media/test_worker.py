@@ -86,5 +86,83 @@ class RenderTests(unittest.TestCase):
                 worker.assemble(m, root, lambda url,dest: shutil.copyfile(video,dest))
 
 
+class RecoveryTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root_patch = patch.object(worker, 'ROOT', Path(self.temp.name))
+        self.root_patch.start()
+    def tearDown(self):
+        self.root_patch.stop()
+        self.temp.cleanup()
+
+    def request(self):
+        return {'job':'restart-regression','kind':'Assembly','payload': {
+            'duration':1,'fps':24,'resolution':'1920x1080',
+            'shots':[{'source':'video','duration':1}], 'audio':[{'source':'audio'}]}}
+
+    def test_restart_resumes_same_id_and_renders_real_1080p(self):
+        root = Path(self.temp.name)
+        video, audio = root/'source.mp4', root/'source.wav'
+        worker.command(worker.ffmpeg_args()+['-f','lavfi','-i','testsrc2=size=320x240:rate=24','-t','1','-c:v','libx264','-threads','1',str(video)])
+        worker.command(worker.ffmpeg_args()+['-f','lavfi','-i','sine=frequency=440:sample_rate=24000','-t','1',str(audio)])
+        original = worker.assemble
+        def assemble(payload, folder):
+            def fetch(url,destination): shutil.copyfile(audio if url=='audio' else video,destination)
+            return original(payload,folder,fetch)
+        request=self.request()
+        with patch.object(worker.POOL,'submit'):
+            job=worker.enqueue(request)
+            # Input objects are not modified by validation or normalization.
+            self.assertNotIn('frames',request['payload']['shots'][0])
+            worker.update(job,status='Processing')
+        with patch.object(worker,'assemble',side_effect=assemble), patch.object(worker,'notify'), patch.object(worker.POOL,'submit',side_effect=lambda fn,*args:fn(*args)):
+            self.assertEqual(worker.recover_jobs(),1)
+        state=worker.get_job(job)
+        self.assertEqual(state['status'],'Completed')
+        data=json.loads(state['result'])
+        self.assertEqual((data['frames'],data['fps'],data['width'],data['height']),(24,24,1920,1080))
+        self.assertTrue(data['has_audio'])
+        with patch.object(worker.POOL,'submit') as submit:
+            self.assertEqual(worker.recover_jobs(),0)
+            self.assertEqual(worker.enqueue(request),job)
+            submit.assert_not_called()
+        worker.command(['ffmpeg','-v','error','-i',str(root/job/'output.mp4'),'-f','null','-'])
+        (root/job/'output.mp4').unlink()
+        worker.recover_jobs()
+        self.assertEqual(worker.get_job(job)['status'],'Failed')
+
+    def test_legacy_database_migrates_and_interrupted_jobs_are_explicit(self):
+        import sqlite3
+        with sqlite3.connect(Path(self.temp.name)/'jobs.sqlite3') as c:
+            c.execute('CREATE TABLE jobs(id TEXT PRIMARY KEY,source_job TEXT,digest TEXT,status TEXT,result TEXT,error TEXT,created REAL,callback_error TEXT)')
+            c.execute("INSERT INTO jobs VALUES('legacy','source','hash','Processing','{}','',0,'')")
+        self.assertEqual(worker.recover_jobs(),0)
+        state=worker.get_job('legacy')
+        self.assertEqual(state['status'],'Failed')
+        self.assertIn('no saved request',state['error'])
+        self.assertIn('request_json',state)
+
+    def test_failed_fixed_callback_is_retried_and_cleared(self):
+        import urllib.error
+        from unittest.mock import MagicMock
+        with patch.object(worker.POOL,'submit'):
+            job=worker.enqueue(self.request())
+        worker.update(job,status='Failed',error='Test error')
+        ok=MagicMock();ok.__enter__.return_value.status=200
+        with patch.object(worker,'CALLBACK','https://the-last-repair-studio.bubbleapps.io/version-test/api/1.1/wf/production_webhook'),patch.object(worker,'CALLBACK_TOKEN','test-token'),patch('worker.urllib.request.urlopen',side_effect=[urllib.error.URLError('temporary'),ok]) as send:
+            worker.notify(job,self.request(),'Failed',error='Test error')
+            state=worker.get_job(job)
+            self.assertEqual(state['callback_attempts'],1)
+            self.assertTrue(state['callback_error'])
+            worker.update(job,callback_next=0)
+            self.assertEqual(worker.retry_callbacks(),1)
+            state=worker.get_job(job)
+            self.assertEqual(state['callback_attempts'],2)
+            self.assertEqual(state['callback_error'],'')
+            self.assertEqual(state['callback_next'],0)
+            self.assertEqual(worker.retry_callbacks(),0)
+            self.assertEqual(send.call_count,2)
+
+
 if __name__ == '__main__':
     unittest.main()

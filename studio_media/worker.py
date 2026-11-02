@@ -1,5 +1,6 @@
 """Private Bubble media adapter. No model weights or credentials in source."""
 import concurrent.futures
+import copy
 import hashlib
 import hmac
 import ipaddress
@@ -30,6 +31,7 @@ WAN = 'https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space'
 LIP = 'https://hugging-apps-lip-forcing.hf.space'
 POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 DB_LOCK = threading.Lock()
+VERSION = '1.1.0'
 MAX_DOWNLOAD = 256 * 1024 * 1024
 HOSTS = ('cdn.bubble.io', 'hf.space', 'huggingface.co', 'hf.co', 'amazonaws.com', 'onrender.com')
 
@@ -99,6 +101,8 @@ def command(args, timeout=1200):
     except subprocess.TimeoutExpired:
         raise MediaError('Media processing exceeded its time limit') from None
     if p.returncode:
+        print(json.dumps({'event': 'media_command_failed', 'tool': args[0],
+                          'returncode': p.returncode}), flush=True)
         # FFmpeg diagnostics can contain private signed URLs; keep them internal.
         raise MediaError('Media processing failed: check the input format and timeline')
     return p.stdout
@@ -226,7 +230,8 @@ def assemble(value, folder, fetch=download):
             filters += f",drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:textfile={caption_file}:fontcolor=white:fontsize=36:box=1:boxcolor=black@0.6:x=(w-tw)/2:y=h-th-60:enable='between(t,{start},{end})'"
         segment = folder / f'segment-{index}.mp4'
         command(ffmpeg_args() + ['-protocol_whitelist', 'file,pipe', '-ss', str(shot['trim_in']), '-i', str(src),
-                '-vf', filters, '-frames:v', str(shot['frames']), '-an', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '20', str(segment)])
+                '-vf', filters, '-frames:v', str(shot['frames']), '-an', '-c:v', 'libx264',
+                '-threads', '1', '-preset', 'ultrafast', '-crf', '20', str(segment)])
         if probe(segment)['frames'] != shot['frames']:
             raise MediaError('A normalized shot failed its frame-count check')
         segments.append(segment)
@@ -318,7 +323,16 @@ def output_url(value):
 def db():
     c = sqlite3.connect(ROOT / 'jobs.sqlite3', timeout=30)
     c.row_factory = sqlite3.Row
+    c.execute('PRAGMA journal_mode=WAL')
+    c.execute('PRAGMA synchronous=FULL')
     c.execute('CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, source_job TEXT, digest TEXT, status TEXT, result TEXT, error TEXT, created REAL, callback_error TEXT)')
+    columns = {r[1] for r in c.execute('PRAGMA table_info(jobs)')}
+    for column, definition in {'request_json': "TEXT NOT NULL DEFAULT '{}'",
+                               'callback_attempts': 'INTEGER NOT NULL DEFAULT 0',
+                               'callback_next': 'REAL NOT NULL DEFAULT 0'}.items():
+        if column not in columns:
+            c.execute(f'ALTER TABLE jobs ADD COLUMN {column} {definition}')
+    c.commit()
     return c
 
 
@@ -350,6 +364,9 @@ def notify(job_id, request, status, result=None, error=''):
     if target.scheme != 'https' or not (target.hostname or '').endswith('.bubbleapps.io'):
         update(job_id, callback_error='Invalid fixed Bubble callback host')
         return
+    row = get_job(job_id)
+    attempts = row['callback_attempts'] + 1
+    update(job_id, callback_attempts=attempts, callback_next=time.time() + min(3600, 30 * 2 ** min(attempts, 7)))
     body = dict(job_id=request['job'], provider_id=job_id, status=status, error=error, format='mp4')
     if result:
         body.update({k: result[k] for k in ('duration', 'frames', 'fps', 'width', 'height')})
@@ -360,6 +377,7 @@ def notify(job_id, request, status, result=None, error=''):
         with urllib.request.urlopen(req, timeout=30) as response:
             if not 200 <= response.status < 300:
                 raise MediaError('Callback refused')
+        update(job_id, callback_error='', callback_next=0)
     except Exception:
         update(job_id, callback_error='Bubble callback failed; output remains available through authenticated polling')
 
@@ -371,6 +389,7 @@ def process(job_id, request):
         if get_job(job_id)['status'] == 'Cancelled':
             return
         update(job_id, status='Processing')
+        print(json.dumps({'event': 'job_processing', 'job_id': job_id}), flush=True)
         kind = request['kind']
         payload = request['payload']
         if kind in ('Assembly', 'MP4'):
@@ -398,11 +417,14 @@ def process(job_id, request):
         if get_job(job_id)['status'] == 'Cancelled':
             return
         update(job_id, status='Completed', result=json.dumps(measured))
+        print(json.dumps({'event': 'job_completed', 'job_id': job_id,
+                          'frames': measured['frames']}), flush=True)
         notify(job_id, request, 'Completed', measured)
     except Exception as exc:
         error = str(exc) if isinstance(exc, MediaError) else 'Media processing failed; check the request manifest and provider availability'
         if get_job(job_id)['status'] != 'Cancelled':
             update(job_id, status='Failed', error=error)
+            print(json.dumps({'event': 'job_failed', 'job_id': job_id, 'error': error}), flush=True)
             notify(job_id, request, 'Failed', error=error)
     finally:
         for path in folder.iterdir():
@@ -411,6 +433,7 @@ def process(job_id, request):
 
 
 def enqueue(request):
+    request = copy.deepcopy(request)
     if not isinstance(request, dict) or not isinstance(request.get('job'), str) or not request['job'] or len(request['job']) > 150:
         raise MediaError('A source job identifier is required')
     if request.get('kind') not in ('Assembly', 'MP4', 'Video', 'Lip Sync'):
@@ -425,7 +448,8 @@ def enqueue(request):
     digest = hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
     with DB_LOCK, db() as c:
         # Signed output links last 24 hours. Expired, inactive outputs are reclaimed.
-        expired = c.execute("SELECT id FROM jobs WHERE created<? AND status NOT IN ('Queued','Processing')", (time.time() - 86400,)).fetchall()
+        retention = int(os.environ.get('STUDIO_RETENTION_SECONDS', '0' if os.path.ismount(ROOT) else '86400'))
+        expired = c.execute("SELECT id FROM jobs WHERE created<? AND status NOT IN ('Queued','Processing')", (time.time() - retention,)).fetchall() if retention > 0 else []
         for expired_job in expired:
             shutil.rmtree(ROOT / expired_job['id'], ignore_errors=True)
             c.execute('DELETE FROM jobs WHERE id=?', (expired_job['id'],))
@@ -437,9 +461,60 @@ def enqueue(request):
         if c.execute("SELECT count(*) FROM jobs WHERE status IN ('Queued','Processing')").fetchone()[0] >= 4:
             raise MediaError('Worker queue is full; retry after an existing job finishes')
         job_id = secrets.token_hex(16)
-        c.execute('INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?)', (job_id, request['job'], digest, 'Queued', '{}', '', time.time(), ''))
+        c.execute('INSERT INTO jobs(id,source_job,digest,status,result,error,created,callback_error,request_json) VALUES(?,?,?,?,?,?,?,?,?)',
+                  (job_id, request['job'], digest, 'Queued', '{}', '', time.time(), '', json.dumps(request)))
     POOL.submit(process, job_id, request)
     return job_id
+
+
+def recover_jobs():
+    """Resume accepted requests under the same IDs when the data mount survives."""
+    pending = []
+    with DB_LOCK, db() as c:
+        for row in c.execute("SELECT * FROM jobs WHERE status IN ('Queued','Processing','Completed')").fetchall():
+            if row['status'] == 'Completed':
+                if not (ROOT / row['id'] / 'output.mp4').is_file():
+                    c.execute("UPDATE jobs SET status='Failed',error=? WHERE id=?",
+                              ('Completed media is missing; regenerate from the original production inputs', row['id']))
+                continue
+            try:
+                request = json.loads(row['request_json'])
+                if not isinstance(request, dict) or not request.get('job') or 'payload' not in request:
+                    raise ValueError('Missing saved request')
+            except (ValueError, TypeError):
+                c.execute("UPDATE jobs SET status='Failed',error=? WHERE id=?",
+                          ('Legacy interrupted job has no saved request; submit it again', row['id']))
+                continue
+            c.execute("UPDATE jobs SET status='Queued',error='' WHERE id=?", (row['id'],))
+            pending.append((row['id'], request))
+    for job_id, request in pending:
+        POOL.submit(process, job_id, request)
+    return len(pending)
+
+
+def retry_callbacks():
+    """Retry failed fixed-destination delivery; output stays available for polling."""
+    if not CALLBACK or not CALLBACK_TOKEN:
+        return 0
+    with db() as c:
+        rows = c.execute("SELECT * FROM jobs WHERE status IN ('Completed','Failed') AND callback_error!='' AND callback_attempts<5 AND callback_next<=?", (time.time(),)).fetchall()
+    count = 0
+    for row in rows:
+        request = json.loads(row['request_json'])
+        if isinstance(request, dict) and request.get('job'):
+            measured = json.loads(row['result']) if row['status'] == 'Completed' else None
+            notify(row['id'], request, row['status'], measured, row['error'])
+            count += 1
+    return count
+
+
+def delivery_loop():
+    while True:
+        time.sleep(15)
+        try:
+            retry_callbacks()
+        except Exception:
+            print(json.dumps({'event': 'callback_retry_failed'}), flush=True)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -463,7 +538,10 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlsplit(self.path)
         if parsed.path == '/health':
             return self.send_json(200, {'status': 'ok', 'ffmpeg': bool(shutil.which('ffmpeg')), 'authenticated': bool(TOKEN),
-                    'callback_configured': bool(CALLBACK and CALLBACK_TOKEN), 'storage': 'ephemeral',
+                    'callback_configured': bool(CALLBACK and CALLBACK_TOKEN),
+                    'storage': 'persistent_mount' if os.path.ismount(ROOT) else 'ephemeral',
+                    'version': VERSION, 'restart_recovery': True,
+                    'durable_storage': os.path.ismount(ROOT),
                     'operations': ['Assembly', 'MP4', 'Video', 'Lip Sync']})
         match = re.fullmatch(r'/files/([a-f0-9]{32})', parsed.path)
         if match:
@@ -493,7 +571,8 @@ class Handler(BaseHTTPRequestHandler):
         measured = json.loads(job['result'])
         return self.send_json(200, dict(job_id=job['id'], status=job['status'], error=job['error'],
                 output=signed_output(job['id']) if job['status'] == 'Completed' else '',
-                callback_error=job['callback_error'], **measured))
+                callback_error=job['callback_error'], callback_attempts=job['callback_attempts'],
+                durable_storage=os.path.ismount(ROOT), **measured))
 
     def do_POST(self):
         if not self.authorized():
@@ -514,7 +593,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     if not TOKEN:
         raise SystemExit('STUDIO_ADAPTER_TOKEN must be set; service refuses unauthenticated operation')
-    with db() as c:
-        c.execute("UPDATE jobs SET status='Failed',error='Worker restarted before completion; submit the job again' WHERE status IN ('Queued','Processing')")
+    recover_jobs()
+    threading.Thread(target=delivery_loop, daemon=True).start()
     server = ThreadingHTTPServer(('0.0.0.0', int(os.environ.get('PORT', 10000))), Handler)
     server.serve_forever()

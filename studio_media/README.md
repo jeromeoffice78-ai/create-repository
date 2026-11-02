@@ -42,3 +42,13 @@ python worker.py
 ```
 
 The test suite actually renders and decodes a two-shot captioned video with a mixed audio track. It also verifies frame counts and rejects gaps, missing footage, short sources, unsupported transitions, malformed durations and unsafe download URLs.
+
+## Restart and delivery repair (v1.1)
+
+Accepted requests are saved with their job IDs in SQLite. Startup resumes interrupted requests under the same ID when the data directory survives. Legacy interrupted jobs without a saved manifest and completed jobs whose files are missing are marked Failed explicitly. This cannot recover files lost when an ephemeral Render instance is replaced.
+
+Failed fixed-destination callbacks retry up to five total attempts with backoff, once credentials are configured. The existing authenticated polling API remains available. Callback attempts and actual durable storage status are returned by the API; health includes version and restart-recovery support. Logs record sanitized job events and FFmpeg exit codes, without media URLs or credentials.
+
+The H.264 encoder is explicitly limited to one output thread, in addition to existing decoder/filter limits, to reduce memory pressure on the small instance. User request objects are copied before normalization. Eight tests pass, including a real 1080p, 24-frame audio/video export, recovery retaining the job ID, legacy DB migration, missing-output detection, callback retry/clear behavior, and the existing two-shot captioned render.
+
+For persistent storage, mount a disk exactly at `/data` and keep `STUDIO_DATA_DIR=/data`. Mounted storage defaults to no automatic expiration; ephemeral storage defaults to the prior 24-hour cleanup. `STUDIO_RETENTION_SECONDS` can override this (0 disables expiration). Disk capacity and the existing 2 GB worker storage guard still require archiving/space management. No recurring plan charge or disk was activated by the code change. See STORAGE_PLAN.md.
