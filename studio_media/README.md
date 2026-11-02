@@ -13,6 +13,7 @@ The worker accepts the studio's current `Target / SHOTS / AUDIO` text manifest a
 - `GET /health`: operational flags, no credentials.
 - `POST /jobs`: bearer-authenticated `{job, kind, payload, callback?, model?}`; returns provider `job_id` and status.
 - `GET /jobs/{job_id}`: bearer-authenticated status, measured properties, error and temporary signed output URL.
+- `GET /jobs/latest?source_job=<Bubble job ID>`: bearer-authenticated recovery polling by the stable Bubble production-job identifier, returning the newest attempt with the same status schema. This does not require Bubble to retain the renderer-generated ID.
 - `GET /files/{job_id}?expires=...&signature=...`: expiring, signed MP4 download.
 
 Supported kinds are `Assembly`, `MP4`, `Video`, and `Lip Sync`. Image-to-video payloads use `{image_url,prompt,duration,seed}`; lip-sync uses `{video_url,audio_url,seed}`. A text prompt alone cannot stand in for approved references.
@@ -52,3 +53,15 @@ Failed fixed-destination callbacks retry up to five total attempts with backoff,
 The H.264 encoder is explicitly limited to one output thread, in addition to existing decoder/filter limits, to reduce memory pressure on the small instance. User request objects are copied before normalization. Eight tests pass, including a real 1080p, 24-frame audio/video export, recovery retaining the job ID, legacy DB migration, missing-output detection, callback retry/clear behavior, and the existing two-shot captioned render.
 
 For persistent storage, mount a disk exactly at `/data` and keep `STUDIO_DATA_DIR=/data`. Mounted storage defaults to no automatic expiration; ephemeral storage defaults to the prior 24-hour cleanup. `STUDIO_RETENTION_SECONDS` can override this (0 disables expiration). Disk capacity and the existing 2 GB worker storage guard still require archiving/space management. No recurring plan charge or disk was activated by the code change. See STORAGE_PLAN.md.
+
+## Bubble episode-viewer polling (v1.2)
+
+Configure the Bubble API Connector call **server-side/private**. Use the same secret as the existing authenticated /jobs API; never place it in a page HTML element, URL, JavaScript, or a publicly accessible field.
+
+1. After pressing **Assemble episode**, save the Bubble ProductionJob unique ID (the same ID sent in POST /jobs as `job`) and the worker `job_id` returned in the 202 response.
+2. Create the API Connector call `GET https://drama-studio-media-worker.onrender.com/jobs/latest?source_job=[source_job]` with a **private** Authorization header `Bearer [STUDIO_ADAPTER_TOKEN]`. Initialize against a real existing source_job, not a fabricated one.
+3. Have the episode page poll this call every five seconds while status is `Queued` or `Processing`, and stop when `Completed` or `Failed`. Store `status`, `error`, `job_id`, `output`, `frames`, `duration`, and `has_audio` on the matching ProductionJob. Check ownership before exposing project media to a logged-in user.
+4. Show the MP4 player only if `status=Completed` and the `output` value is nonempty. For `Failed`, show the returned error and a **Retry assembly** action. A fresh `output` is generated at each status read, but worker media is temporary: copy it to Bubble storage or the dedicated production archive as soon as possible.
+5. If the page has lost the provider-generated `job_id`, query by `source_job` to recover the latest submission. The endpoint is an API feature, **not** proof that Bubble page workflows have been updated. Verify in Bubble's debugger with a real signed-in studio account before marking that integration complete.
+
+No webhook URL, API token, persistent disk, GPU render provider, or release action is implicitly configured by this change.
