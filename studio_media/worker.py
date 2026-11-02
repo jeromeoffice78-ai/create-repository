@@ -731,7 +731,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Referrer-Policy', 'no-referrer')
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('Content-Security-Policy',
-                "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; media-src 'self' https:; base-uri 'none'; frame-ancestors 'self'")
+                "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; media-src 'self' https:; base-uri 'none'; frame-ancestors 'self' https://the-last-repair-studio.bubbleapps.io")
             self.end_headers()
             self.wfile.write(raw)
             return
