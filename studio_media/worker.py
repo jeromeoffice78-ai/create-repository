@@ -31,7 +31,7 @@ WAN = 'https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space'
 LIP = 'https://hugging-apps-lip-forcing.hf.space'
 POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 DB_LOCK = threading.Lock()
-VERSION = '1.2.0'
+VERSION = '1.3.0'
 MAX_DOWNLOAD = 256 * 1024 * 1024
 HOSTS = ('cdn.bubble.io', 'hf.space', 'huggingface.co', 'hf.co', 'amazonaws.com', 'onrender.com')
 
@@ -201,7 +201,7 @@ def ffmpeg_args():
     return ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-threads', '1', '-filter_threads', '1']
 
 
-def assemble(value, folder, fetch=download):
+def assemble(value, folder, fetch=download, on_progress=None):
     m = manifest(value)
     source_bytes = 0
     def bounded_fetch(url, destination):
@@ -236,6 +236,9 @@ def assemble(value, folder, fetch=download):
             raise MediaError('A normalized shot failed its frame-count check')
         segments.append(segment)
         src.unlink(missing_ok=True)
+        if on_progress:
+            on_progress(10 + round(60 * (index + 1) / len(m['shots'])),
+                        f"Normalizing shot {index + 1} of {len(m['shots'])}")
     listing = folder / 'concat.txt'
     listing.write_text(''.join(f"file '{path.name}'\n" for path in segments), encoding='utf-8')
     video = folder / 'video.mp4'
@@ -254,13 +257,20 @@ def assemble(value, folder, fetch=download):
         args += ['-i', str(src)]
         delay = round(track['start'] * 1000)
         mix_filters.append(f'[{index+1}:a]atrim=start={track["trim_in"]}:end={end},asetpts=PTS-STARTPTS,volume={track["gain"]},adelay={delay}|{delay}[a{index}]')
+        if on_progress:
+            on_progress(70 + round(15 * (index + 1) / len(m['audio'])),
+                        f"Preparing audio track {index + 1} of {len(m['audio'])}")
     out = folder / 'output.mp4'
     if mix_filters:
         mix_filters.append(''.join(f'[a{i}]' for i in range(len(m['audio']))) + f'amix=inputs={len(m["audio"])}:normalize=0,apad,atrim=duration={m["duration"]}[mix]')
         args += ['-filter_complex_threads', '1', '-filter_complex', ';'.join(mix_filters), '-map', '0:v:0', '-map', '[mix]', '-c:a', 'aac']
     else:
         args += ['-an', '-map', '0:v:0']
+    if on_progress:
+        on_progress(90, 'Encoding final MP4')
     command(args + ['-c:v', 'copy', '-t', str(m['duration']), '-movflags', '+faststart', str(out)])
+    if on_progress:
+        on_progress(96, 'Verifying frame count, audio and format')
     result = probe(out)
     if (result['frames'] != m['frames'] or result['width'] != width or result['height'] != height
             or abs(result['fps'] - fps) > .001 or abs(result['duration'] - m['duration']) > .06
@@ -301,6 +311,21 @@ def file_data(url):
     return {'path': url, 'url': url, 'meta': {'_type': 'gradio.FileData'}}
 
 
+def validate_lipsync_audio(payload, folder, fetch=download):
+    """Fail closed before upstream silently truncates its eight-second audio cap."""
+    source = payload.get('audio_url', '')
+    if not isinstance(source, str) or not source:
+        raise MediaError('Lip Sync requires a real audio_url')
+    destination = folder / 'lip-sync-audio-check.input'
+    fetch(source, destination)
+    info = probe(destination)
+    if not info['has_audio'] or info['duration'] <= 0:
+        raise MediaError('Lip Sync requires a playable driving audio file')
+    if info['duration'] > 8.0:
+        raise MediaError('Lip Sync provider supports at most 8 seconds of audio; split long dialogue into shorter clips')
+    return info
+
+
 def output_url(value):
     if isinstance(value, dict):
         for key in ('url', 'video', 'audio'):
@@ -329,7 +354,9 @@ def db():
     columns = {r[1] for r in c.execute('PRAGMA table_info(jobs)')}
     for column, definition in {'request_json': "TEXT NOT NULL DEFAULT '{}'",
                                'callback_attempts': 'INTEGER NOT NULL DEFAULT 0',
-                               'callback_next': 'REAL NOT NULL DEFAULT 0'}.items():
+                               'callback_next': 'REAL NOT NULL DEFAULT 0',
+                               'progress': 'INTEGER NOT NULL DEFAULT 0',
+                               'stage': "TEXT NOT NULL DEFAULT 'Queued'"}.items():
         if column not in columns:
             c.execute(f'ALTER TABLE jobs ADD COLUMN {column} {definition}')
     c.commit()
@@ -362,13 +389,16 @@ def get_latest_job(source_job):
 def job_response(job):
     """Never advertise a completed download after its backing file vanished."""
     if job['status'] == 'Completed' and not (ROOT / job['id'] / 'output.mp4').is_file():
-        update(job['id'], status='Failed',
+        update(job['id'], status='Failed', stage='Output expired or missing',
                error='Completed media is missing; regenerate from the original production inputs')
         job = get_job(job['id'])
     measured = json.loads(job['result'])
+    expiry = int(time.time() + 86400) if job['status'] == 'Completed' else 0
     return dict(job_id=job['id'], source_job=job['source_job'],
                 status=job['status'], error=job['error'],
-                output=signed_output(job['id']) if job['status'] == 'Completed' else '',
+                progress=job['progress'], stage=job['stage'],
+                output=signed_output(job['id'], expiry) if expiry else '',
+                output_expires_at=expiry,
                 callback_error=job['callback_error'],
                 callback_attempts=job['callback_attempts'],
                 durable_storage=os.path.ismount(ROOT), **measured)
@@ -413,17 +443,18 @@ def process(job_id, request):
     try:
         if get_job(job_id)['status'] == 'Cancelled':
             return
-        update(job_id, status='Processing')
+        update(job_id, status='Processing', progress=5, stage='Preparing media job')
         print(json.dumps({'event': 'job_processing', 'job_id': job_id}), flush=True)
         kind = request['kind']
         payload = request['payload']
         if kind in ('Assembly', 'MP4'):
-            path, measured = assemble(payload, folder)
+            path, measured = assemble(payload, folder, on_progress=lambda percent, name: update(job_id, progress=percent, stage=name))
         else:
             if isinstance(payload, str):
                 payload = json.loads(payload)
             if not isinstance(payload, dict):
                 raise MediaError('GPU operations require a structured JSON payload')
+            update(job_id, progress=10, stage='Waiting for GPU provider')
             if kind == 'Video':
                 source = payload.get('image_url', '')
                 duration = number(payload.get('duration', 1), 'GPU duration', .5, 5)
@@ -431,24 +462,33 @@ def process(job_id, request):
                         4, str(payload.get('negative_prompt', 'distorted face, deformed hands, text, watermark')),
                         duration, 1, 1, int(payload.get('seed', 42)), False])
             elif kind == 'Lip Sync':
-                response = gradio(LIP, 'lip_sync', [file_data(payload.get('video_url', '')), file_data(payload.get('audio_url', '')), int(payload.get('seed', 42))])
+                video_url, audio_url = payload.get('video_url', ''), payload.get('audio_url', '')
+                file_data(video_url)
+                file_data(audio_url)
+                update(job_id, progress=15, stage='Validating lip-sync audio duration')
+                validate_lipsync_audio(payload, folder)
+                update(job_id, progress=20, stage='Waiting for lip-sync GPU provider')
+                response = gradio(LIP, 'lip_sync', [file_data(video_url), file_data(audio_url), int(payload.get('seed', 42))])
             else:
                 raise MediaError('Unsupported operation')
+            update(job_id, progress=65, stage='Downloading generated clip')
             path = folder / 'output.mp4'
             download(output_url(response), path)
+            update(job_id, progress=92, stage='Verifying generated clip')
             measured = probe(path)
             if not measured['frames'] or (kind == 'Lip Sync' and not measured['has_audio']):
                 raise MediaError('GPU output failed media verification')
         if get_job(job_id)['status'] == 'Cancelled':
             return
-        update(job_id, status='Completed', result=json.dumps(measured))
+        update(job_id, status='Completed', progress=100, stage='Completed',
+               result=json.dumps(measured), error='')
         print(json.dumps({'event': 'job_completed', 'job_id': job_id,
                           'frames': measured['frames']}), flush=True)
         notify(job_id, request, 'Completed', measured)
     except Exception as exc:
         error = str(exc) if isinstance(exc, MediaError) else 'Media processing failed; check the request manifest and provider availability'
         if get_job(job_id)['status'] != 'Cancelled':
-            update(job_id, status='Failed', error=error)
+            update(job_id, status='Failed', stage='Failed', error=error)
             print(json.dumps({'event': 'job_failed', 'job_id': job_id, 'error': error}), flush=True)
             notify(job_id, request, 'Failed', error=error)
     finally:
@@ -470,6 +510,17 @@ def enqueue(request):
             request['payload'] = json.loads(request['payload'])
         except (KeyError, ValueError, TypeError):
             raise MediaError('GPU payload must be JSON, not an unstructured prompt') from None
+    if request['kind'] in ('Video', 'Lip Sync'):
+        payload = request['payload']
+        if not isinstance(payload, dict):
+            raise MediaError('GPU payload must be a JSON object')
+        urls = ('image_url',) if request['kind'] == 'Video' else ('video_url', 'audio_url')
+        for field in urls:
+            if not isinstance(payload.get(field), str) or not payload[field]:
+                raise MediaError(f'{request["kind"]} requires a real {field}')
+            safe_url(payload[field])
+        if request['kind'] == 'Video':
+            number(payload.get('duration', 1), 'GPU duration', .5, 5)
     digest = hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
     with DB_LOCK, db() as c:
         # Signed output links last 24 hours. Expired, inactive outputs are reclaimed.
@@ -499,7 +550,7 @@ def recover_jobs():
         for row in c.execute("SELECT * FROM jobs WHERE status IN ('Queued','Processing','Completed')").fetchall():
             if row['status'] == 'Completed':
                 if not (ROOT / row['id'] / 'output.mp4').is_file():
-                    c.execute("UPDATE jobs SET status='Failed',error=? WHERE id=?",
+                    c.execute("UPDATE jobs SET status='Failed',stage='Failed',error=? WHERE id=?",
                               ('Completed media is missing; regenerate from the original production inputs', row['id']))
                 continue
             try:
@@ -507,10 +558,10 @@ def recover_jobs():
                 if not isinstance(request, dict) or not request.get('job') or 'payload' not in request:
                     raise ValueError('Missing saved request')
             except (ValueError, TypeError):
-                c.execute("UPDATE jobs SET status='Failed',error=? WHERE id=?",
+                c.execute("UPDATE jobs SET status='Failed',stage='Failed',error=? WHERE id=?",
                           ('Legacy interrupted job has no saved request; submit it again', row['id']))
                 continue
-            c.execute("UPDATE jobs SET status='Queued',error='' WHERE id=?", (row['id'],))
+            c.execute("UPDATE jobs SET status='Queued',progress=0,stage='Queued after restart',error='' WHERE id=?", (row['id'],))
             pending.append((row['id'], request))
     for job_id, request in pending:
         POOL.submit(process, job_id, request)
@@ -527,8 +578,10 @@ def retry_callbacks():
     for row in rows:
         request = json.loads(row['request_json'])
         if isinstance(request, dict) and request.get('job'):
-            measured = json.loads(row['result']) if row['status'] == 'Completed' else None
-            notify(row['id'], request, row['status'], measured, row['error'])
+            # A lost ephemeral MP4 must not trigger another broken success callback.
+            snapshot = job_response(dict(row))
+            measured = json.loads(row['result']) if snapshot['status'] == 'Completed' else None
+            notify(row['id'], request, snapshot['status'], measured, snapshot['error'])
             count += 1
     return count
 
@@ -612,7 +665,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(413, {'error': 'Manifest size must be 1 byte to 1 MB'})
             job_id = enqueue(json.loads(self.rfile.read(length)))
             job = get_job(job_id)
-            return self.send_json(202, {'job_id': job_id, 'status': job['status'], 'output': '', 'error': ''})
+            return self.send_json(202, {'job_id': job_id, 'source_job': job['source_job'],
+                                        'status': job['status'], 'progress': job['progress'],
+                                        'stage': job['stage'], 'output': '', 'error': ''})
         except (ValueError, TypeError) as exc:
             return self.send_json(422, {'error': str(exc) if isinstance(exc, MediaError) else 'Malformed JSON manifest'})
 
