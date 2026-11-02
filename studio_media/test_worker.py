@@ -66,8 +66,15 @@ class RenderTests(unittest.TestCase):
                  'audio': [{'source':'audio','gain':.5,'start':0,'trim_in':0,'trim_out':2}]}
             output_dir = root / 'job'
             output_dir.mkdir()
-            path, data = worker.assemble(copy.deepcopy(m), output_dir, fetch)
+            progress_events = []
+            path, data = worker.assemble(copy.deepcopy(m), output_dir, fetch,
+                on_progress=lambda percent, stage: progress_events.append((percent, stage)))
             self.assertTrue(path.is_file())
+            self.assertTrue(progress_events)
+            self.assertEqual([p for p, _ in progress_events],
+                             sorted(p for p, _ in progress_events))
+            self.assertEqual(progress_events[-1][0], 96)
+            self.assertIn('audio', ' '.join(s for _, s in progress_events).lower())
             self.assertEqual(data['frames'], 48)
             self.assertEqual(data['fps'], 24)
             self.assertTrue(data['has_audio'])
@@ -106,9 +113,9 @@ class RecoveryTests(unittest.TestCase):
         worker.command(worker.ffmpeg_args()+['-f','lavfi','-i','testsrc2=size=320x240:rate=24','-t','1','-c:v','libx264','-threads','1',str(video)])
         worker.command(worker.ffmpeg_args()+['-f','lavfi','-i','sine=frequency=440:sample_rate=24000','-t','1',str(audio)])
         original = worker.assemble
-        def assemble(payload, folder):
+        def assemble(payload, folder, on_progress=None):
             def fetch(url,destination): shutil.copyfile(audio if url=='audio' else video,destination)
-            return original(payload,folder,fetch)
+            return original(payload,folder,fetch,on_progress=on_progress)
         request=self.request()
         with patch.object(worker.POOL,'submit'):
             job=worker.enqueue(request)
@@ -119,6 +126,8 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(worker.recover_jobs(),1)
         state=worker.get_job(job)
         self.assertEqual(state['status'],'Completed')
+        self.assertEqual(state['progress'],100)
+        self.assertEqual(state['stage'],'Completed')
         data=json.loads(state['result'])
         self.assertEqual((data['frames'],data['fps'],data['width'],data['height']),(24,24,1920,1080))
         self.assertTrue(data['has_audio'])
@@ -130,6 +139,7 @@ class RecoveryTests(unittest.TestCase):
         (root/job/'output.mp4').unlink()
         worker.recover_jobs()
         self.assertEqual(worker.get_job(job)['status'],'Failed')
+        self.assertEqual(worker.get_job(job)['stage'],'Failed')
 
     def test_legacy_database_migrates_and_interrupted_jobs_are_explicit(self):
         import sqlite3
@@ -209,6 +219,8 @@ class RecoveryTests(unittest.TestCase):
                 self.assertEqual(unauthorized.exception.code, 401)
                 self.assertEqual(read(path)['job_id'], second)
                 self.assertEqual(read(path)['status'], 'Queued')
+                self.assertEqual(read(path)['progress'], 0)
+                self.assertEqual(read(path)['stage'], 'Queued')
                 self.assertEqual(read('/jobs/' + first)['status'], 'Completed')
                 with self.assertRaises(HTTPError) as missing:
                     read('/jobs/latest?source_job=does-not-exist')
@@ -224,6 +236,8 @@ class RecoveryTests(unittest.TestCase):
                 self.assertEqual(state['output'], '')
                 self.assertIn('missing', state['error'])
                 self.assertEqual(state['source_job'], source_job)
+                self.assertEqual(state['stage'], 'Output expired or missing')
+                self.assertEqual(state['output_expires_at'], 0)
             finally:
                 server.shutdown()
                 server.server_close()
