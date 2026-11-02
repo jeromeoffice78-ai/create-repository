@@ -31,7 +31,7 @@ WAN = 'https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space'
 LIP = 'https://hugging-apps-lip-forcing.hf.space'
 POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 DB_LOCK = threading.Lock()
-VERSION = '1.1.0'
+VERSION = '1.2.0'
 MAX_DOWNLOAD = 256 * 1024 * 1024
 HOSTS = ('cdn.bubble.io', 'hf.space', 'huggingface.co', 'hf.co', 'amazonaws.com', 'onrender.com')
 
@@ -349,6 +349,31 @@ def get_job(job_id):
     return dict(row)
 
 
+def get_latest_job(source_job):
+    """Recover the newest provider job using the stable Bubble source job ID."""
+    with db() as c:
+        row = c.execute(
+            'SELECT * FROM jobs WHERE source_job=? ORDER BY created DESC, rowid DESC LIMIT 1',
+            (source_job,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def job_response(job):
+    """Never advertise a completed download after its backing file vanished."""
+    if job['status'] == 'Completed' and not (ROOT / job['id'] / 'output.mp4').is_file():
+        update(job['id'], status='Failed',
+               error='Completed media is missing; regenerate from the original production inputs')
+        job = get_job(job['id'])
+    measured = json.loads(job['result'])
+    return dict(job_id=job['id'], source_job=job['source_job'],
+                status=job['status'], error=job['error'],
+                output=signed_output(job['id']) if job['status'] == 'Completed' else '',
+                callback_error=job['callback_error'],
+                callback_attempts=job['callback_attempts'],
+                durable_storage=os.path.ismount(ROOT), **measured)
+
+
 def signed_output(job_id, expiry=None):
     expiry = expiry or int(time.time() + 86400)
     signature = hmac.new(TOKEN.encode(), f'{job_id}:{expiry}'.encode(), hashlib.sha256).hexdigest()
@@ -564,15 +589,17 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not self.authorized():
             return self.send_json(401, {'error': 'Authentication required'})
-        match = re.fullmatch(r'/jobs/([a-f0-9]{32})', parsed.path)
-        job = get_job(match[1]) if match else None
+        if parsed.path == '/jobs/latest':
+            source_job = urllib.parse.parse_qs(parsed.query).get('source_job', [''])[0]
+            if not source_job or len(source_job) > 150:
+                return self.send_json(422, {'error': 'A valid source_job query parameter is required'})
+            job = get_latest_job(source_job)
+        else:
+            match = re.fullmatch(r'/jobs/([a-f0-9]{32})', parsed.path)
+            job = get_job(match[1]) if match else None
         if not job:
             return self.send_json(404, {'error': 'Unknown job'})
-        measured = json.loads(job['result'])
-        return self.send_json(200, dict(job_id=job['id'], status=job['status'], error=job['error'],
-                output=signed_output(job['id']) if job['status'] == 'Completed' else '',
-                callback_error=job['callback_error'], callback_attempts=job['callback_attempts'],
-                durable_storage=os.path.ismount(ROOT), **measured))
+        return self.send_json(200, job_response(job))
 
     def do_POST(self):
         if not self.authorized():
