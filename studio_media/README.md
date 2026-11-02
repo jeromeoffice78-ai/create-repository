@@ -80,3 +80,11 @@ In Bubble, expose `progress` and `stage` in the live-render monitor using the ex
 A restart now resets recovered pending jobs to `Queued after restart`, then resumes measured stage updates if the job database and source media remain available. Retried callbacks also check for missing output before notifying Bubble, preventing false `Completed` deliveries from the worker.
 
 These are backend capabilities. Bubble page workflows, authenticated callbacks, permanent storage, approved cast likeness, full-body animation, and 180-second episode verification remain separate acceptance gates.
+
+## Short-clip AI provider guard (v1.3.0)
+
+The configured Wan2.2 image-to-video Space generates at **16 FPS**, with a maximum five-second clip. The configured Lip Forcing Space accepts an audio clip of **at most eight seconds**, and uses a face-aligned talking-head reference. These third-party models do **not** by themselves deliver the Season 1 requirement of 180 seconds at 24 FPS or guarantee fidelity to an approved cast reference.
+
+The worker now rejects missing or malformed `image_url`, `video_url` and `audio_url` fields before queueing a GPU request; an image-to-video request over five seconds is also rejected before queueing. Lip-sync first downloads and probes actual driving audio, rejects missing audio and durations above eight seconds rather than letting the provider silently truncate speech. Clip durations and errors are available through the status endpoint. Longer dialogue must be split into multiple clips and assembled with correctly timed audio; this is not automatic scene generation.
+
+No third-party model availability, likeness preservation, acting, or complete-episode verification is implied by a passing adapter test.
