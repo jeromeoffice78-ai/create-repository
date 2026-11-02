@@ -245,5 +245,37 @@ class RecoveryTests(unittest.TestCase):
 
 
 
+    def test_lip_sync_blocks_long_audio_instead_of_truncating(self):
+        root = Path(self.temp.name)
+        for seconds in (2, 9):
+            path = root / f'audio-{seconds}.wav'
+            worker.command(worker.ffmpeg_args() + [
+                '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=16000',
+                '-t', str(seconds), str(path)
+            ])
+            def fetch(url, destination): shutil.copyfile(path, destination)
+            if seconds > 8:
+                with self.assertRaisesRegex(worker.MediaError, '8 seconds'):
+                    worker.validate_lipsync_audio({'audio_url': 'audio'}, root, fetch)
+            else:
+                info = worker.validate_lipsync_audio({'audio_url': 'audio'}, root, fetch)
+                self.assertTrue(info['has_audio'])
+                self.assertAlmostEqual(info['duration'], seconds, delta=.1)
+
+    def test_invalid_gpu_requests_fail_before_queueing(self):
+        with patch.object(worker.POOL, 'submit'), patch.object(worker, 'safe_url', side_effect=lambda value: value):
+            invalid = [
+                {'job': 'missing-image', 'kind': 'Video', 'payload': {'prompt': 'walk'}},
+                {'job': 'too-long', 'kind': 'Video', 'payload': {
+                    'image_url': 'https://media.cdn.bubble.io/portrait.png', 'duration': 6}},
+                {'job': 'missing-audio', 'kind': 'Lip Sync', 'payload': {
+                    'video_url': 'https://media.cdn.bubble.io/shot.mp4'}},
+            ]
+            for request in invalid:
+                with self.subTest(job=request['job']), self.assertRaises(worker.MediaError):
+                    worker.enqueue(request)
+
+
+
 if __name__ == '__main__':
     unittest.main()
