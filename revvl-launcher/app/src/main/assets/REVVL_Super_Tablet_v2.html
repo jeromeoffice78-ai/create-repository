@@ -34,17 +34,16 @@
 <section class="view" id="view-rigging">
 <div class="eyebrow">REVVL Super Tablet · Photo-to-3D</div>
 <h1 class="headline">3D Character Creator</h1>
-<p class="lead">Keep your eight approved characters. Detect a real facial landmark mesh from your approved photos; fit a skinned body with jaw, eye and mouth controls and export a rigged GLB from the local 3D Character Lab.</p>
-<div class="two">
-<div class="panel"><h2>Launch local 3D lab</h2>
-<p class="minor">Requires the Character Lab v3 Python service running locally on 127.0.0.1:8770. Google Play Termux does not permit this Android app to start that service automatically.</p>
-<a class="btn primary" href="http://127.0.0.1:8770/creator.html" target="_blank" rel="noopener noreferrer">Open 3D Character Creator</a>
-<p class="minor">In Termux, start the lab once with the installed service script: <code>bash ~/supertab/creator-v2/rig-factory/start_service.sh</code></p>
+<p class="lead">Use the eight approved cast photographs to fit a real triangulated 3D face mesh, bind a humanoid skeleton and export editable GLB characters.</p>
+<div class="panel" style="margin-bottom:14px">
+<h2>Local reconstruction engine</h2>
+<p class="minor">The creator works inside this dashboard once your Termux 3D service is running at <code>127.0.0.1:8770</code>. The Google Play Termux build cannot be started directly by this Android app.</p>
+<p class="minor">If the tool below doesn't load, open Termux and run <code>bash ~/supertab/creator-v2/rig-factory/start_service.sh</code>, then return here.</p>
+<a class="btn" target="_blank" rel="noopener noreferrer" href="http://127.0.0.1:8770/creator.html">Open creator in a separate tab</a>
 </div>
-<div class="panel"><h2>Required production checks</h2>
-<p class="minor">Photo landmark geometry is only an approximation. An exact acting double requires multiview face fitting, hairstyle and body work, rig/expressions, lip sync and manual review. The approved image originals are not replaced.</p>
-<div class="note">3D geometry, skeletal rig, facial morphs and model exports must all be verified before the episode render is released.</div>
-</div></div></section>
+<iframe id="revvl-character-frame" src="http://127.0.0.1:8770/creator.html" title="REVVL 3D Character Creator" style="display:block;width:100%;height:1380px;background:#091421;border:1px solid #31576e;border-radius:14px"></iframe>
+<p class="minor">Only the locally selected approved photo is transferred to the character tool. No model is automatically marked an exact or production-approved likeness.</p>
+</section>
 <section class="view" id="view-chatgpt">
 <div class="eyebrow">Official ChatGPT + optional OpenAI API</div>
 <h1 class="headline">ChatGPT Connection</h1>
@@ -164,6 +163,19 @@ $('#chat-clear').addEventListener('click',()=>{chatHistory=[];$('#chat-thread').
 $('#chat-send').addEventListener('click',async()=>{if(chatBusy)return;let field=$('#chat-message');let message=field.value.trim();if(!message){toast('Type a message first');return;}let history=chatHistory.slice(-10);let context=$('#chat-include-project').checked?episodeContext():'';chatBusy=true;$('#chat-send').disabled=true;field.value='';addChatMessage('user',message);let working=addChatMessage('assistant','Thinking…');try{let data=await chatFetch('/api/chat',{message,history,context});working.textContent=data.reply;chatHistory.push({role:'user',content:message},{role:'assistant',content:data.reply});chatHistory=chatHistory.slice(-12);}catch(e){working.classList.add('error');working.textContent='Connection error: '+e.message;field.value=message;}finally{chatBusy=false;$('#chat-send').disabled=false;}});
 $('#chat-message').addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter')$('#chat-send').click();});
 
+window.addEventListener('message',async event=>{
+ if(event.origin!=='http://127.0.0.1:8770'||event.source!==document.querySelector('#revvl-character-frame')?.contentWindow)return;
+ const d=event.data;
+ if(!d||d.type!=='REVVL_GET_APPROVED_PHOTO'||typeof d.key!=='string'||!/^cast:/.test(d.key))return;
+ const name=d.key.slice(5);
+ if(!project.cast.some(c=>c.name===name))return;
+ try{
+  const photo=await getImage(d.key);
+  event.source.postMessage({type:'REVVL_APPROVED_PHOTO_RESULT',requestId:d.requestId,data:photo||null},'http://127.0.0.1:8770');
+ }catch(e){
+  event.source.postMessage({type:'REVVL_APPROVED_PHOTO_RESULT',requestId:d.requestId,data:null},'http://127.0.0.1:8770');
+ }
+});
 window.addEventListener('online',renderEnvironment);window.addEventListener('offline',renderEnvironment);$('#connection').textContent='Local workspace ready';renderStudio();renderEnvironment();save();let hash=location.hash.slice(1);if(['home','studio','chatgpt','rigging','cloud','gaming','files'].includes(hash))show(hash);
 })();
 </script></body></html>
