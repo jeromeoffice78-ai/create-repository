@@ -3,11 +3,11 @@ android {
     namespace 'com.revvl.supertablet'
     compileSdk 35
     defaultConfig {
-        applicationId 'com.revvl.supertablet.oneclick'
+        applicationId 'com.revvl.supertablet.recovery'
         minSdk 26
         targetSdk 35
-        versionCode 7
-        versionName '3.4'
+        versionCode 1
+        versionName '3.5-recovery'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
