@@ -295,6 +295,31 @@ async function testLocalPort(url){
   }finally{clearTimeout(timeout);}
  }catch(e){return 'Not reachable';}
 }
+async function identifyCharacterEngine(){
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),2500);
+ try{
+  const response=await fetch('http://127.0.0.1:8770/health',{method:'GET',cache:'no-store',mode:'cors',signal:controller.signal});
+  const data=await response.json();
+  if(response.ok&&data&&data.ok===true&&data.service==='REVVL Native 3D Character Engine'){
+   return 'Native Android Character Engine '+(data.version||'')+' responding (rig draft only; likeness unverified)';
+  }
+  return 'Unrecognized service on port 8770; features not verified';
+ }catch(e){
+  const reach=await testLocalPort('http://127.0.0.1:8770/creator.html');
+  return reach==='Not reachable'
+   ?'Not reachable: open the REVVL 3D Character Engine Android app and start its service'
+   :'Legacy Character Lab or older engine responding (identity not verified)';
+ }finally{clearTimeout(timer);}
+}
+async function checkCharacterEngine(){
+ const field=$('#character-engine-status');
+ if(field)field.textContent='Checking service at port 8770...';
+ const result=await identifyCharacterEngine();
+ if(field)field.textContent=result;
+ return result;
+}
+$('#character-engine-test').addEventListener('click',checkCharacterEngine);
 async function runSystemChecks(){
  const button=$('#diagnostic-run'),out=$('#diagnostic-output'),exportButton=$('#diagnostic-export');
  button.disabled=true;exportButton.disabled=true;out.textContent='Running local checks...';
@@ -320,7 +345,14 @@ async function runSystemChecks(){
   results.checks.active_scene_count=ep().scenes.length;
   results.checks.active_duration_seconds=total();
   results.checks.active_timing_valid=total()===TARGET;
-  results.checks.character_creator_port_8770=await testLocalPort('http://127.0.0.1:8770/creator.html');
+  results.checks.character_creator_port_8770=await identifyCharacterEngine();
+  const ep2=project.episodes[1];
+  results.checks.episode_2_saved_scenes=ep2&&Array.isArray(ep2.scenes)?ep2.scenes.length:0;
+  results.checks.episode_2_planned_seconds=ep2&&Array.isArray(ep2.scenes)?ep2.scenes.reduce((sum,scene)=>sum+(Number(scene.seconds)||0),0):0;
+  results.checks.episode_2_timing_valid=results.checks.episode_2_planned_seconds===TARGET;
+  let photoCount=0;
+  for(const person of project.cast){if(person&&person.name&&await getImage('cast:'+person.name))photoCount++;}
+  results.checks.approved_cast_photos_saved=photoCount+' / '+project.cast.length;
   results.checks.optional_ai_bridge_port_8767=await testLocalPort('http://127.0.0.1:8767/api/status');
   if(navigator.storage&&navigator.storage.estimate){
    try{const quota=await navigator.storage.estimate();
