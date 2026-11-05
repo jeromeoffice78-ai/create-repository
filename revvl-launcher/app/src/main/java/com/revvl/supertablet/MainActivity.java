@@ -134,7 +134,7 @@ public final class MainActivity extends Activity {
             boolean running=checkDashboard();
             handler.post(() -> {
                 if (id!=generation || isFinishing()) return;
-                if (running) onReady();
+                if (running && checkSelfPermission(PERMISSION)!=PackageManager.PERMISSION_GRANTED) onReady();
                 else startServices();
             });
         });
