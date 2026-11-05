@@ -1,0 +1,88 @@
+name: Build REVVL 3D Character Engine companion
+on:
+  push:
+    branches: [revvl-tab2-android-launcher]
+    paths:
+      - "rigengine/**"
+      - "revvl-launcher/settings.gradle"
+      - ".github/workflows/revvl-character-engine.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-character-engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out REVVL source
+        uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Install Android SDK
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"
+      - name: Check embedded rig template
+        run: |
+          python - <<'PY'
+          import base64,gzip,json,struct,pathlib
+          p=pathlib.Path('rigengine/src/main/assets/rig_template.b64')
+          data=gzip.decompress(base64.b64decode(p.read_bytes()))
+          assert data[:4]==b'glTF'
+          jlen=struct.unpack_from('<I',data,12)[0]
+          doc=json.loads(data[20:20+jlen])
+          assert len(doc['skins'][0]['joints'])==22
+          assert len(doc.get('animations',[]))==3
+          assert len(doc.get('meshes',[]))>=10
+          print('Validated rig: joints',len(doc['skins'][0]['joints']),'animations',len(doc['animations']),'meshes',len(doc['meshes']))
+          PY
+      - name: Build standalone Android companion APK
+        run: gradle --project-dir revvl-launcher --no-daemon :rigengine:assembleDebug
+      - name: Allow emulator acceleration
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Android 15 startup, health endpoint and asset tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          emulator-boot-timeout: 600
+          disable-animations: true
+          script: |
+            adb install -r rigengine/build/outputs/apk/debug/rigengine-debug.apk
+            adb shell am start -W -n com.revvl.supertablet.characterengine/com.revvl.supertablet.rigengine.EngineActivity
+            adb forward tcp:18770 tcp:8770
+            ok=0
+            for i in $(seq 1 35); do
+              if curl -fsS --max-time 3 -o /tmp/rig-health.json http://127.0.0.1:18770/health; then ok=1; break; fi
+              sleep 2
+            done
+            test "$ok" = 1
+            grep -q '"ok":true' /tmp/rig-health.json
+            grep -q '"joints":22' /tmp/rig-health.json
+            curl -fsS --max-time 8 -o /tmp/rig-creator.html http://127.0.0.1:18770/creator.html
+            grep -q 'REVVL 3D Character Creator' /tmp/rig-creator.html
+            grep -q "REVVL_GET_APPROVED_PHOTO" /tmp/rig-creator.html
+            curl -fsS --max-time 8 -o /tmp/rig-template.glb http://127.0.0.1:18770/template.glb
+            python - <<'PY'
+            import pathlib
+            b=pathlib.Path('/tmp/rig-template.glb').read_bytes()
+            assert b[:4]==b'glTF' and len(b)>10000
+            print('Android emulator served rig template:',len(b),'bytes')
+            PY
+      - name: Upload standalone APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: REVVL-3D-Character-Engine-companion-debug
+          path: rigengine/build/outputs/apk/debug/rigengine-debug.apk
+          if-no-files-found: error
