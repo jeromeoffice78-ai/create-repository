@@ -45,7 +45,7 @@ jobs:
           print('Validated rig: joints',len(doc['skins'][0]['joints']),'animations',len(doc['animations']),'meshes',len(doc['meshes']))
           PY
       - name: Build standalone Android companion APK
-        run: gradle --project-dir revvl-launcher --no-daemon :rigengine:assembleDebug
+        run: gradle --project-dir revvl-launcher --no-daemon :app:assembleDebug :rigengine:assembleDebug
       - name: Allow emulator acceleration
         run: |
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
@@ -69,6 +69,16 @@ jobs:
             grep -q "REVVL_GET_APPROVED_PHOTO" /tmp/rig-creator.html
             curl -fsS --max-time 8 -o /tmp/rig-template.glb http://127.0.0.1:18770/template.glb
             python -c "from pathlib import Path; b=Path('/tmp/rig-template.glb').read_bytes(); assert_ok=b[:4]==b'glTF' and len(b)>10000; print('Android template valid:',assert_ok,len(b),'bytes'); exit(0 if assert_ok else 1)"
+            adb install -r revvl-launcher/app/build/outputs/apk/debug/app-debug.apk
+            adb shell am start -W -n com.revvl.supertablet.recovery/com.revvl.supertablet.MainActivity
+            adb forward tcp:18788 tcp:8788
+            curl -fsS --retry 20 --retry-delay 2 --retry-connrefused --max-time 4 -D /tmp/recovery.txt -o /tmp/recovery.html http://127.0.0.1:18788/REVVL_Super_Tablet_v2.html
+            grep -q 'X-REVVL-Server: REVVL-RECOVERY/3.6' /tmp/recovery.txt
+            curl -fsS --max-time 4 -o /tmp/rig-still-running.json http://127.0.0.1:18770/health
+            grep -q '"service":"REVVL Native 3D Character Engine"' /tmp/rig-still-running.json
+            grep -q 'setClassName("com.revvl.supertablet.recovery"' rigengine/src/main/java/com/revvl/supertablet/rigengine/EngineActivity.java
+            echo "Confirmed both local services coexist and Recovery app entrypoint is wired"
+
       - name: Publish stable direct APK download
         env:
           GH_TOKEN: ${{ github.token }}
