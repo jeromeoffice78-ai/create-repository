@@ -24,6 +24,15 @@ details{margin-top:12px;border-top:1px solid #315465;padding-top:10px}summary{cu
 <span class="pill">REVVL Super Tablet • Local security workspace</span>
 <h1>Security Toolbox</h1>
 <p>Tap a tool to perform a real, read-only diagnostic and see its results. Website checks use the REVVL Android service; file and password checks stay in Chrome on this tablet. This is an authorized security assessment toolkit, not an automatic break-in system.</p>
+<section class="card" id="ghost-panel">
+<h2>Ghost Protocol · Private session mode</h2>
+<p>Keep security checks local to your tablet. When enabled, Ghost Protocol blocks all website requests from this toolbox, disables report downloads, and clears results and inputs when you leave this screen. Results are never written to this app's local storage.</p>
+<label class="inline"><input id="ghost-toggle" type="checkbox"><span><strong>Enable Ghost Protocol</strong> — local diagnostics only, clear on exit</span></label>
+<p id="ghost-status" role="status">Ghost Protocol is off. Website diagnostics can make network requests.</p>
+<div class="row"><button class="secondary" id="ghost-clear" type="button">Clear sensitive session data now</button></div>
+<p class="note">Ghost Protocol is not a VPN, Tor connection, anonymity system, or anti-detection tool. It cannot erase network logs, ISP records, or browser history. External links remain ordinary websites.</p>
+<details><summary>How to use Ghost Protocol</summary><p>Turn it on before doing local-only checks. Use REVVL Local Services, File SHA-256, or the local password-quality tool. Network tools will stay disabled. When you switch tabs, close this page, or tap Clear, the visible report and target are erased. Turning it off re-enables authorized website diagnostics.</p></details>
+</section>
 <section class="card">
 <h2>Authorized target</h2>
 <label for="target">Website you own or have permission to check</label>
@@ -49,25 +58,65 @@ details{margin-top:12px;border-top:1px solid #315465;padding-top:10px}summary{cu
 'use strict';
 const $=id=>document.getElementById(id);
 let latest=null;
+let ghost=false;
+let requestSequence=0;
+let activeController=null;
 const buttons=[...document.querySelectorAll('[data-tool]')];
+const externalButtons=buttons.filter(b=>b.dataset.tool!=='local');
 function status(message){$('feedback').textContent=message}
+function clearSensitive(message){
+ requestSequence++;
+ if(activeController){activeController.abort();activeController=null}
+ latest=null;
+ $('results').textContent='';
+ $('results').hidden=true;
+ $('target').value='';
+ $('pw').value='';
+ $('hash-file').value='';
+ $('authorize').checked=false;
+ $('download-report').disabled=true;
+ if(message)status(message);
+}
+function setGhost(enabled){
+ ghost=!!enabled;
+ clearSensitive(ghost?'Ghost Protocol on — no Internet checks; temporary results only.':'Ghost Protocol off — authorized website checks available.');
+ externalButtons.forEach(b=>b.disabled=ghost);
+ $('ghost-status').textContent=ghost?
+  'ACTIVE: Internet diagnostics blocked, report export disabled, and session cleared on exit.':
+  'OFF: Authorized Internet diagnostics are enabled. No in-app history is stored.';
+ $('download-report').disabled=true;
+}
+$('ghost-toggle').addEventListener('change',e=>setGhost(e.target.checked));
+$('ghost-clear').addEventListener('click',()=>clearSensitive('Sensitive inputs and results cleared.'));
+document.addEventListener('visibilitychange',()=>{if(ghost&&document.hidden)clearSensitive('Ghost Protocol cleared the session on exit.')});
+window.addEventListener('pagehide',()=>{if(ghost)clearSensitive('Ghost Protocol cleared the session.')});
 function show(data){
- latest=data;$('results').textContent=JSON.stringify(data,null,2);$('results').hidden=false;
- $('download-report').disabled=false;
- status(data.error?'Diagnostic reported an error: '+data.error:'Completed: real results shown below.');
+ latest=ghost?null:data;
+ $('results').textContent=JSON.stringify(data,null,2);
+ $('results').hidden=false;
+ $('download-report').disabled=ghost||!latest;
+ status(data.error?'Diagnostic reported an error: '+data.error:'Completed: real results shown below.'+(ghost?' Ghost mode will clear them when you leave.':''));
 }
 async function run(tool){
+ if(ghost&&tool!=='local'){status('Ghost Protocol blocks website requests. Turn it off to run an authorized Internet diagnostic.');return}
  if(tool!=='local'&&!$('authorize').checked){status('Check the authorization box before running an Internet diagnostic.');return}
  const target=$('target').value.trim();
  if(tool!=='local'&&!target){status('Enter an authorized public domain first.');return}
- buttons.forEach(b=>b.disabled=true);status('Running '+tool+' using the REVVL Android service...');
+ const generation=++requestSequence;
+ buttons.forEach(b=>b.disabled=true);
+ status('Running '+tool+' using the REVVL Android service...');
+ const controller=new AbortController();activeController=controller;
  try{
-  const res=await fetch('/api/security',{method:'POST',cache:'no-store',
+  const res=await fetch('/api/security',{method:'POST',cache:'no-store',signal:controller.signal,
    headers:{'Content-Type':'application/json'},body:JSON.stringify({tool,target})});
   const data=await res.json();
-  show(data);
- }catch(e){show({error:'Android security service unavailable. Open the installed REVVL Recovery application and use its updated dashboard. '+e.message})}
- finally{buttons.forEach(b=>b.disabled=false)}
+  if(generation===requestSequence)show(data);
+ }catch(e){
+  if(generation===requestSequence)show({error:'Android security service unavailable. Open the updated REVVL Recovery app. '+e.message})
+ }finally{
+  if(activeController===controller)activeController=null;
+  buttons.forEach(b=>b.disabled=ghost&&b.dataset.tool!=='local')
+ }
 }
 for(const b of buttons)b.addEventListener('click',()=>run(b.dataset.tool));
 $('pick-file').addEventListener('click',()=>$('hash-file').click());
@@ -90,10 +139,10 @@ $('check-pw').addEventListener('click',()=>{
  $('pw').value='';
 });
 $('download-report').addEventListener('click',()=>{
- if(!latest)return;
+ if(ghost||!latest)return;
  const blob=new Blob([JSON.stringify(latest,null,2)],{type:'application/json'});
  const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='REVVL_Security_Results.json';
  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),3000);
 });
-$('clear-result').addEventListener('click',()=>{latest=null;$('results').hidden=true;$('results').textContent='';$('download-report').disabled=true;status('Results cleared. Choose another tool.')});
+$('clear-result').addEventListener('click',()=>clearSensitive('Results and sensitive inputs cleared.'));
 </script></body></html>
