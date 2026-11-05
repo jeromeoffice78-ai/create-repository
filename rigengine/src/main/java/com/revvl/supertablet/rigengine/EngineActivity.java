@@ -60,9 +60,9 @@ public final class EngineActivity extends Activity {
                                 byte[] b=new byte[512];int count;
                                 while(out.size()<4096&&(count=in.read(b))!=-1)out.write(b,0,count);
                                 String body=out.toString(StandardCharsets.UTF_8.name());
-                                ready=body.contains("\\"service\\":\\"REVVL Native 3D Character Engine\\"")
-                                    &&body.contains("\\"animation_clips\\":3")
-                                    &&body.contains("\\"ok\\":true");
+                                ready=body.contains("\"service\":\"REVVL Native 3D Character Engine\"")
+                                    &&body.contains("\"animation_clips\":3")
+                                    &&body.contains("\"ok\":true");
                                 if(!ready)foreign=true;
                             }
                         } else foreign=true;
