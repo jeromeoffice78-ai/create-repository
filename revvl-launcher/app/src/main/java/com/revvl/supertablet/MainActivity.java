@@ -26,7 +26,7 @@ import java.util.concurrent.Executors;
  */
 public final class MainActivity extends Activity {
     private static final String URL = DashboardService.DASHBOARD;
-    private static final String SERVER_ID = "REVVL-RECOVERY/3.5";
+    private static final String SERVER_ID = "REVVL-RECOVERY/3.6";
     private enum DashboardState { CURRENT, OCCUPIED, NOT_RUNNING }
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ExecutorService checks = Executors.newSingleThreadExecutor();
@@ -79,14 +79,14 @@ public final class MainActivity extends Activity {
         l.setPadding(dp(23),dp(52),dp(23),dp(25));
         l.setBackgroundColor(Color.rgb(8,17,31));
         TextView title = new TextView(this);
-        title.setText("REVVL\nSUPER TABLET\nRECOVERY");
+        title.setText("REVVL\nSUPER TABLET\nCOMPUTE");
         title.setTextSize(32);
         title.setTypeface(null,1);
         title.setGravity(Gravity.CENTER);
         title.setTextColor(Color.WHITE);
         l.addView(title,new LinearLayout.LayoutParams(-1,-2));
         TextView description=new TextView(this);
-        description.setText("Recovery app • Independent dashboard • Open Chrome");
+        description.setText("Compute Center • Independent dashboard • Open Chrome");
         description.setGravity(Gravity.CENTER);
         description.setTextSize(15);
         description.setTextColor(Color.rgb(101,228,187));
