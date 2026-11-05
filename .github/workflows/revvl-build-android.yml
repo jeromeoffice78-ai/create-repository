@@ -44,6 +44,16 @@ jobs:
           print('Validated Recovery diagnostics UI and inline JavaScript extraction')
           PY
           node --check /tmp/revvl-dashboard-js-check.js
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html=Path('revvl-launcher/app/src/main/assets/REVVL_Security_Toolbox.html').read_text()
+          scripts=re.findall(r'<script[^>]*>([\\s\\S]*?)</script>',html,re.I)
+          assert scripts and 'data-tool="dns"' in html and 'data-tool="tls"' in html and 'data-tool="headers"' in html
+          Path('/tmp/revvl-security-js-check.js').write_text('\\n'.join(scripts))
+          print('Found functional security toolkit controls')
+          PY
+          node --check /tmp/revvl-security-js-check.js
       - name: Build debug APK
         run: gradle --project-dir revvl-launcher --no-daemon :app:assembleDebug
       - name: Allow Android emulator hardware acceleration
@@ -69,16 +79,28 @@ jobs:
             grep -q '200 OK' /tmp/revvl-compute-headers.txt
             grep -q 'Supercomputer Control Center' /tmp/revvl-compute.html
             grep -q 'X-REVVL-Server: REVVL-RECOVERY/3.6' /tmp/revvl-compute-headers.txt
+            curl -fsS -D /tmp/revvl-security-headers.txt -o /tmp/revvl-security.html http://127.0.0.1:18788/REVVL_Security_Toolbox.html
+            grep -q '200 OK' /tmp/revvl-security-headers.txt
+            grep -q 'Run Header Audit' /tmp/revvl-security.html
+            grep -q 'Security Toolbox' /tmp/revvl-home.html
+            curl -fsS -H 'Origin: http://127.0.0.1:8788' -H 'Content-Type: application/json' -d '{"tool":"local"}' -o /tmp/revvl-security-local.json http://127.0.0.1:18788/api/security
+            grep -q '"services"' /tmp/revvl-security-local.json
+            grep -q '"port":8788' /tmp/revvl-security-local.json
+            curl -sS -D /tmp/revvl-security-reject.txt -H 'Origin: https://attacker.invalid' -H 'Content-Type: application/json' -d '{"tool":"local"}' -o /tmp/revvl-security-reject.json http://127.0.0.1:18788/api/security
+            grep -q '403 Forbidden' /tmp/revvl-security-reject.txt
+            curl -sS -H 'Origin: http://127.0.0.1:8788' -H 'Content-Type: application/json' -d '{"tool":"dns","target":"localhost"}' -o /tmp/revvl-security-private.json http://127.0.0.1:18788/api/security
+            grep -q '"error"' /tmp/revvl-security-private.json
+            echo "REVVL Security Toolbox UI, local diagnostics, cross-origin protection and private-domain rejection passed on Android 15."
             echo "REVVL v3.6 dashboard and compute console served correctly on Android 15."
       - name: Publish a browser-downloadable Recovery repair APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp revvl-launcher/app/build/outputs/apk/debug/app-debug.apk REVVL_Recovery_Connection_Repair.apk
-          if gh release view revvl-recovery-connection-repair >/dev/null 2>&1; then
-            gh release upload revvl-recovery-connection-repair REVVL_Recovery_Connection_Repair.apk --clobber
+          cp revvl-launcher/app/build/outputs/apk/debug/app-debug.apk REVVL_Recovery_Security_Toolbox.apk
+          if gh release view revvl-recovery-security-toolbox >/dev/null 2>&1; then
+            gh release upload revvl-recovery-security-toolbox REVVL_Recovery_Security_Toolbox.apk --clobber
           else
-            gh release create revvl-recovery-connection-repair REVVL_Recovery_Connection_Repair.apk --title "REVVL Recovery — Connection Repair" --notes "Native dashboard on 8788; explicit rig engine diagnostic distinguishes Android and old Character Lab services on 8770; Episode 2 and cast photo counts in diagnostics. Existing Chrome browser data remains on its origin. Back up the full project before making Android app installation changes. Android debug APK signatures can conflict with previous installs."
+            gh release create revvl-recovery-security-toolbox REVVL_Recovery_Security_Toolbox.apk --title "REVVL Recovery — Security Toolbox" --notes "Native dashboard on 8788; explicit rig engine diagnostic distinguishes Android and old Character Lab services on 8770; Episode 2 and cast photo counts in diagnostics. Existing Chrome browser data remains on its origin. Back up the full project before making Android app installation changes. Android debug APK signatures can conflict with previous installs."
           fi
       - name: Upload debug APK
         if: success()
