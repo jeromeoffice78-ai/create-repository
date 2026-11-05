@@ -19,7 +19,7 @@
 </style></head>
 <body>
 <div class="layout">
-<aside class="sidebar"><div class="brand"><div class="logo">R</div><div><strong>REVVL SUPER TABLET</strong><small>Creator OS · Local Edition v2.1</small></div></div><div class="sidecap">WORKSPACE</div><nav class="navwrap" aria-label="Main navigation"><button class="navbtn active" data-view="home"><span>▦</span> Command Center</button><button class="navbtn" data-view="studio"><span>🎬</span> Drama Studio</button><button class="navbtn" data-view="rigging"><span>🧬</span> 3D Character Creator</button><button class="navbtn" data-view="nia"><span>🤝</span> Nia Device Bridge</button><button class="navbtn" data-view="chatgpt"><span>✦</span> ChatGPT</button><button class="navbtn" data-view="cloud"><span>☁</span> AI & Cloud</button><button class="navbtn" data-view="gaming"><span>🎮</span> Gaming</button><button class="navbtn" data-view="files"><span>▤</span> Backup & Setup</button></nav><div class="sidebottom"><b>Local-first work</b><small>Your drafts stay in this browser unless you export them. External services require internet and their own accounts.</small></div></aside>
+<aside class="sidebar"><div class="brand"><div class="logo">R</div><div><strong>REVVL SUPER TABLET</strong><small>Creator OS · Local Edition v2.1</small></div></div><div class="sidecap">WORKSPACE</div><nav class="navwrap" aria-label="Main navigation"><button class="navbtn active" data-view="home"><span>▦</span> Command Center</button><button class="navbtn" data-view="studio"><span>🎬</span> Drama Studio</button><button class="navbtn" data-view="rigging"><span>🧬</span> 3D Character Creator</button><button class="navbtn" data-view="chatgpt"><span>✦</span> ChatGPT</button><button class="navbtn" data-view="cloud"><span>☁</span> AI & Cloud</button><button class="navbtn" data-view="gaming"><span>🎮</span> Gaming</button><button class="navbtn" data-view="files"><span>▤</span> Backup & Setup</button></nav><div class="sidebottom"><b>Local-first work</b><small>Your drafts stay in this browser unless you export them. External services require internet and their own accounts.</small></div></aside>
 <main class="main"><div class="topbar"><div class="crumb" id="page-name">COMMAND CENTER / OVERVIEW</div><div class="status"><i class="dot"></i><span id="connection">Dashboard loaded</span></div></div>
 <section class="view active" id="view-home">
 <div class="hero"><div class="eyebrow">Your Android production workspace</div><h1>One tablet.<br>Every creative tool.</h1><p>Launch cloud development, gaming, and video tools. Build and save drama series scripts, scene plans, storyboards, and production manifests locally.</p><div class="actions"><button class="btn primary" data-go="studio">🎬 Open Drama Studio</button><button class="btn" data-go="chatgpt">✦ Connect to ChatGPT</button><button class="btn" data-go="cloud">☁ AI compute tools</button></div></div>
@@ -84,21 +84,6 @@
     <p class="minor">No purchase, subscription, account sign-in, workstation integration, or automatic installation has been performed.</p>
   </div>
 </div>
-</section>
-<section class="view" id="view-nia">
-<div class="eyebrow">Nia companion · Local network</div>
-<h1 class="headline">Nia Universal Device Bridge</h1>
-<p class="lead">Pair your REVVL tablet with a phone or computer using an encrypted browser-to-browser connection. This is the transport foundation for Nia—not Jarvis. The separate Nia AI app, voice control and device actions are not connected yet.</p>
-<div class="panel">
-<h2>Use the Nia bridge</h2>
-<p class="minor">Start on this tablet. On your second Android device, install the same REVVL dashboard APK and open its Nia Device Bridge tab, or download the standalone companion HTML below to a compatible browser on another computer. Both devices must be on the same Wi-Fi or phone hotspot. Exchange the offer and answer messages privately.</p>
-<div class="actions">
-<a class="btn primary" href="/REVVL_Nia_Device_Bridge.html" target="_blank" rel="noopener noreferrer">Open bridge in new tab</a>
-<a class="btn" href="/REVVL_Nia_Device_Bridge.html" download="REVVL_Nia_Device_Bridge.html">Download standalone companion</a>
-</div>
-<p class="minor">Your original dashboard remains accessible only on this device at localhost. The pairing page has no commands to access saved photos, recordings, apps or files.</p>
-</div>
-<iframe src="/REVVL_Nia_Device_Bridge.html" title="Nia Universal Device Bridge pairing console" loading="lazy" style="width:100%;height:1250px;max-width:100%;border:1px solid #2f5767;border-radius:14px;background:#081626"></iframe>
 </section>
 <section class="view" id="view-chatgpt">
 <div class="eyebrow">Official ChatGPT + optional OpenAI API</div>
@@ -173,7 +158,7 @@ async function clearImages(){try{let d=await db();await new Promise((resolve,rej
 async function photoFromFile(file){if(!file||!file.type.startsWith('image/'))throw Error('Select an image file');if(file.size>18*1024*1024)throw Error('Image is too large (18 MB maximum)');return new Promise((resolve,reject)=>{let reader=new FileReader();reader.onload=()=>{let img=new Image();img.onload=()=>{let scale=Math.min(1,1100/Math.max(img.width,img.height));let canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);resolve(canvas.toDataURL('image/jpeg',.83));};img.onerror=()=>reject(Error('Cannot read image'));img.src=reader.result;};reader.onerror=()=>reject(Error('Cannot read file'));reader.readAsDataURL(file);});}
 async function showPhotos(){let nodes=$$('[data-photo]');for(let node of nodes){let key=node.dataset.photo;let data=await getImage(key);if(!node.isConnected)continue;if(data){let img=document.createElement('img');img.src=data;img.alt='Uploaded approved portrait or storyboard image';node.replaceChildren(img);}else node.textContent=key.startsWith('cast:')?'Approved photo not loaded':'No storyboard image attached';}}
 const ep=()=>project.episodes[episodeIdx];const total=()=>ep().scenes.reduce((a,s)=>a+(Number(s.seconds)||0),0);
-function show(view){if(!$('#view-'+view))return;$$('.view').forEach(n=>n.classList.toggle('active',n.id==='view-'+view));$$('.navbtn').forEach(n=>n.classList.toggle('active',n.dataset.view===view));$('#page-name').textContent='COMMAND CENTER / '+({home:'OVERVIEW',studio:'DRAMA STUDIO',chatgpt:'CHATGPT',rigging:'3D CHARACTER CREATOR',nia:'NIA DEVICE BRIDGE',cloud:'AI & CLOUD',gaming:'GAMING',files:'BACKUP & SETUP'}[view]||view);location.hash=view;window.scrollTo({top:0,behavior:'instant'});if(view==='studio')renderStudio();if(view==='rigging')renderCharacterWorkbench();if(view==='chatgpt')checkChatAPI();if(view==='files')renderEnvironment();}
+function show(view){if(!$('#view-'+view))return;$$('.view').forEach(n=>n.classList.toggle('active',n.id==='view-'+view));$$('.navbtn').forEach(n=>n.classList.toggle('active',n.dataset.view===view));$('#page-name').textContent='COMMAND CENTER / '+({home:'OVERVIEW',studio:'DRAMA STUDIO',chatgpt:'CHATGPT',rigging:'3D CHARACTER CREATOR',cloud:'AI & CLOUD',gaming:'GAMING',files:'BACKUP & SETUP'}[view]||view);location.hash=view;window.scrollTo({top:0,behavior:'instant'});if(view==='studio')renderStudio();if(view==='rigging')renderCharacterWorkbench();if(view==='chatgpt')checkChatAPI();if(view==='files')renderEnvironment();}
 $$('[data-view]').forEach(n=>n.addEventListener('click',()=>show(n.dataset.view)));$$('[data-go]').forEach(n=>n.addEventListener('click',()=>show(n.dataset.go)));
 function renderPick(){let picker=$('#episode-picker');picker.innerHTML=project.episodes.map((e,i)=>`<option value="${i}">Episode ${i+1}</option>`).join('');picker.value=episodeIdx;}
 
@@ -304,6 +289,6 @@ window.addEventListener('message',async event=>{
   event.source.postMessage({type:'REVVL_APPROVED_PHOTO_RESULT',requestId:d.requestId,data:null},'http://127.0.0.1:8770');
  }
 });
-window.addEventListener('online',renderEnvironment);window.addEventListener('offline',renderEnvironment);$('#connection').textContent='Local workspace ready';renderStudio();renderEnvironment();save();let hash=location.hash.slice(1);if(['home','studio','chatgpt','rigging','nia','cloud','gaming','files'].includes(hash))show(hash);
+window.addEventListener('online',renderEnvironment);window.addEventListener('offline',renderEnvironment);$('#connection').textContent='Local workspace ready';renderStudio();renderEnvironment();save();let hash=location.hash.slice(1);if(['home','studio','chatgpt','rigging','cloud','gaming','files'].includes(hash))show(hash);
 })();
 </script></body></html>
