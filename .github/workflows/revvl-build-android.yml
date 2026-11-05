@@ -48,9 +48,9 @@ jobs:
           from pathlib import Path
           import re
           html=Path('revvl-launcher/app/src/main/assets/REVVL_Security_Toolbox.html').read_text()
-          scripts=re.findall(r'<script[^>]*>([\\s\\S]*?)</script>',html,re.I)
+          scripts=re.findall(r'<script[^>]*>([\s\S]*?)</script>',html,re.I)
           assert scripts and 'data-tool="dns"' in html and 'data-tool="tls"' in html and 'data-tool="headers"' in html
-          Path('/tmp/revvl-security-js-check.js').write_text('\\n'.join(scripts))
+          Path('/tmp/revvl-security-js-check.js').write_text('\n'.join(scripts))
           print('Found functional security toolkit controls')
           PY
           node --check /tmp/revvl-security-js-check.js
