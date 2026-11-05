@@ -61,9 +61,7 @@ jobs:
             adb install -r rigengine/build/outputs/apk/debug/rigengine-debug.apk
             adb shell am start -W -n com.revvl.supertablet.characterengine/com.revvl.supertablet.rigengine.EngineActivity
             adb forward tcp:18770 tcp:8770
-            ok=0
-            for i in $(seq 1 35); do if curl -fsS --max-time 3 -o /tmp/rig-health.json http://127.0.0.1:18770/health; then ok=1; break; fi; sleep 2; done
-            test "$ok" = 1
+            curl -fsS --retry 20 --retry-delay 2 --retry-connrefused --max-time 4 -o /tmp/rig-health.json http://127.0.0.1:18770/health
             grep -q '"ok":true' /tmp/rig-health.json
             grep -q '"joints":22' /tmp/rig-health.json
             curl -fsS --max-time 8 -o /tmp/rig-creator.html http://127.0.0.1:18770/creator.html
