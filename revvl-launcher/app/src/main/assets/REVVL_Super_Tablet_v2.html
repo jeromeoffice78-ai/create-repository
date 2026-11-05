@@ -43,6 +43,38 @@
 </div>
 <iframe id="revvl-character-frame" src="http://127.0.0.1:8770/creator.html" title="REVVL 3D Character Creator" style="display:block;width:100%;height:1380px;background:#091421;border:1px solid #31576e;border-radius:14px"></iframe>
 <p class="minor">Only the locally selected approved photo is transferred to the character tool. No model is automatically marked an exact or production-approved likeness.</p>
+
+<div class="panel" id="daz-workstation" style="margin-top:20px">
+  <div class="eyebrow">Desktop character modeling · External workstation</div>
+  <h2>Daz Studio — Realistic 3D Character Pipeline</h2>
+  <p class="minor">Daz Studio runs on a compatible Windows or macOS workstation, not directly on your Android tablet. Use your tablet to save the approved portrait and a character brief; complete Face Transfer / Genesis fitting in Daz Studio on the workstation. Facial accuracy requires manual review. Nothing is sent to Daz automatically.</p>
+  <div class="actions">
+    <a class="btn primary" href="https://www.daz3d.com/get_studio" target="_blank" rel="noopener noreferrer">Open Daz Studio (official)</a>
+    <a class="btn" href="https://www.daz3d.com/face-transfer-2" target="_blank" rel="noopener noreferrer">Face Transfer 2</a>
+    <a class="btn" href="https://www.daz3d.com/daz-to-blender-overview" target="_blank" rel="noopener noreferrer">Daz → Blender Bridge</a>
+    <a class="btn" href="https://remotedesktop.google.com/" target="_blank" rel="noopener noreferrer">Remote desktop</a>
+  </div>
+  <p class="minor">Daz Studio is free to get started. Face Transfer 2's unlimited saving option is paid; trial limits apply. Daz-to-Blender compatibility depends on installed versions, so verify the bridge before exporting characters.</p>
+  <div class="two" style="margin-top:16px">
+    <div class="panel">
+      <h2>Prepare an approved cast member</h2>
+      <div class="field">
+        <label for="daz-cast-picker">Official approved character</label>
+        <select id="daz-cast-picker" aria-label="Approved character for Daz Studio"><option value="">Choose character</option></select>
+      </div>
+      <div class="actions" style="margin-top:10px">
+        <button class="btn primary" type="button" id="daz-save-portrait">Save approved portrait</button>
+        <button class="btn" type="button" id="daz-save-brief">Export Daz character brief</button>
+      </div>
+      <p class="minor">The portrait is downloaded locally from this browser's saved cast. It is not recreated, enhanced, or automatically sent to a third party.</p>
+    </div>
+    <div class="panel">
+      <h2>Production workflow</h2>
+      <p class="minor">1. Transfer the approved portrait to your workstation. 2. In Daz Studio, fit a Genesis 9 figure using Face Transfer 2 and manual morph controls. 3. Verify face shape, hair, skin, and wardrobe. 4. Export with compatible Daz-to-Blender Bridge. 5. Verify skin weights, facial morphs and animation in Blender before final rendering.</p>
+      <div class="note">Status: Daz Studio has been added as an external workstation workflow. No Daz account, Face Transfer license, desktop software, or live Blender connection has been configured by this dashboard.</div>
+    </div>
+  </div>
+</div>
 </section>
 <section class="view" id="view-chatgpt">
 <div class="eyebrow">Official ChatGPT + optional OpenAI API</div>
@@ -117,9 +149,54 @@ async function clearImages(){try{let d=await db();await new Promise((resolve,rej
 async function photoFromFile(file){if(!file||!file.type.startsWith('image/'))throw Error('Select an image file');if(file.size>18*1024*1024)throw Error('Image is too large (18 MB maximum)');return new Promise((resolve,reject)=>{let reader=new FileReader();reader.onload=()=>{let img=new Image();img.onload=()=>{let scale=Math.min(1,1100/Math.max(img.width,img.height));let canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);resolve(canvas.toDataURL('image/jpeg',.83));};img.onerror=()=>reject(Error('Cannot read image'));img.src=reader.result;};reader.onerror=()=>reject(Error('Cannot read file'));reader.readAsDataURL(file);});}
 async function showPhotos(){let nodes=$$('[data-photo]');for(let node of nodes){let key=node.dataset.photo;let data=await getImage(key);if(!node.isConnected)continue;if(data){let img=document.createElement('img');img.src=data;img.alt='Uploaded approved portrait or storyboard image';node.replaceChildren(img);}else node.textContent=key.startsWith('cast:')?'Approved photo not loaded':'No storyboard image attached';}}
 const ep=()=>project.episodes[episodeIdx];const total=()=>ep().scenes.reduce((a,s)=>a+(Number(s.seconds)||0),0);
-function show(view){if(!$('#view-'+view))return;$$('.view').forEach(n=>n.classList.toggle('active',n.id==='view-'+view));$$('.navbtn').forEach(n=>n.classList.toggle('active',n.dataset.view===view));$('#page-name').textContent='COMMAND CENTER / '+({home:'OVERVIEW',studio:'DRAMA STUDIO',chatgpt:'CHATGPT',rigging:'3D CHARACTER CREATOR',cloud:'AI & CLOUD',gaming:'GAMING',files:'BACKUP & SETUP'}[view]||view);location.hash=view;window.scrollTo({top:0,behavior:'instant'});if(view==='studio')renderStudio();if(view==='chatgpt')checkChatAPI();if(view==='files')renderEnvironment();}
+function show(view){if(!$('#view-'+view))return;$$('.view').forEach(n=>n.classList.toggle('active',n.id==='view-'+view));$$('.navbtn').forEach(n=>n.classList.toggle('active',n.dataset.view===view));$('#page-name').textContent='COMMAND CENTER / '+({home:'OVERVIEW',studio:'DRAMA STUDIO',chatgpt:'CHATGPT',rigging:'3D CHARACTER CREATOR',cloud:'AI & CLOUD',gaming:'GAMING',files:'BACKUP & SETUP'}[view]||view);location.hash=view;window.scrollTo({top:0,behavior:'instant'});if(view==='studio')renderStudio();if(view==='rigging')renderDazCastPicker();if(view==='chatgpt')checkChatAPI();if(view==='files')renderEnvironment();}
 $$('[data-view]').forEach(n=>n.addEventListener('click',()=>show(n.dataset.view)));$$('[data-go]').forEach(n=>n.addEventListener('click',()=>show(n.dataset.go)));
 function renderPick(){let picker=$('#episode-picker');picker.innerHTML=project.episodes.map((e,i)=>`<option value="${i}">Episode ${i+1}</option>`).join('');picker.value=episodeIdx;}
+
+function renderDazCastPicker(){
+ const picker=$('#daz-cast-picker');
+ if(!picker)return;
+ const current=picker.value;
+ picker.replaceChildren();
+ const opt=document.createElement('option');opt.value='';opt.textContent='Choose approved character';picker.appendChild(opt);
+ for(const character of project.cast){
+  if(!character||typeof character.name!=='string')continue;
+  const option=document.createElement('option');option.value=character.name;option.textContent=character.name;picker.appendChild(option);
+ }
+ if(project.cast.some(c=>c.name===current))picker.value=current;
+}
+$('#daz-save-portrait').addEventListener('click',async()=>{
+ const name=$('#daz-cast-picker').value;
+ if(!name){toast('Choose an approved character first');return;}
+ const portrait=await getImage('cast:'+name);
+ if(typeof portrait!=='string'||!/^data:image\/(?:jpeg|png|webp);base64,/.test(portrait)){
+  toast('Approved portrait is not saved in this browser. Check Approved Cast.');return;
+ }
+ const type=portrait.startsWith('data:image/png')?'png':portrait.startsWith('data:image/webp')?'webp':'jpg';
+ const a=document.createElement('a');a.href=portrait;a.download=filename(name)+'_Approved_Reference.'+type;
+ document.body.appendChild(a);a.click();a.remove();
+ toast('Approved portrait downloaded to this device');
+});
+$('#daz-save-brief').addEventListener('click',()=>{
+ const name=$('#daz-cast-picker').value;
+ if(!name){toast('Choose an approved character first');return;}
+ const person=project.cast.find(c=>c.name===name);
+ if(!person)return;
+ const brief={
+  format:'REVVL_DAZ_CHARACTER_PREP_V1',
+  series:project.series,
+  character:{name:person.name,role:person.role||'',wardrobe:person.wardrobe||''},
+  source_image:filename(name)+'_Approved_Reference.jpg',
+  source_policy:'Use only approved reference photographs; do not generate substitute faces.',
+  target:'Daz Studio Genesis 9 using Face Transfer 2 as starting point, then manual shape/material fitting',
+  pipeline:['Copy approved portrait to workstation','Create Genesis 9 character in Daz Studio','Apply Face Transfer 2 if licensed and available','Refine face, hair, eyes, complexion, wardrobe manually','Verify facial likeness against original in multiple views','Transfer with a compatible Daz to Blender Bridge','Validate skeleton, facial morphs, visemes, mesh and textures'],
+  validation:{exact_likeness_verified:false,rig_verified:false,lip_sync_verified:false,release_blocked:true},
+  notes:'This JSON is a modeling handoff brief, not a Daz .duf or an animation-ready character.'
+ };
+ download(filename(name)+'_Daz_Character_Brief.json',JSON.stringify(brief,null,2),'application/json');
+ toast('Daz character brief exported');
+});
+
 function renderStudio(){renderPick();$('#project-name').value=project.series;$('#episode-title').value=ep().title;renderTiming();renderScenes();renderCast();renderChecks();}
 function renderTiming(){let secs=total();$('#duration-fill').style.width=Math.min(100,secs/TARGET*100)+'%';$('#duration-fill').classList.toggle('over',secs>TARGET);$('#duration-label').textContent=`${secs} of ${TARGET} seconds planned • ${secs*FRAMES} of ${TARGET*FRAMES} frames`;let status=$('#duration-status');status.textContent=secs===TARGET?'Shot plan timing complete':secs>TARGET?`Over target by ${secs-TARGET}s`:`${TARGET-secs}s unplanned`;status.className='flag '+(secs===TARGET?'good':'bad');}
 function renderScenes(){let scenes=ep().scenes;$('#scene-count').textContent=scenes.length+' scene'+(scenes.length===1?'':'s');$('#scene-list').innerHTML=scenes.length?scenes.map((s,i)=>`<article class="scene"><div class="scenephoto" data-photo="scene:${episodeIdx}:${esc(s.id)}"></div><div class="scenebody"><h3>${esc(s.location)||'Unnamed scene'}</h3><div class="meta">Scene ${i+1} · ${s.seconds}s · ${s.seconds*FRAMES} frames</div><p>${esc((s.action||'').slice(0,260))||'No action notes yet'}</p>${s.cast?`<p><b>Cast:</b> ${esc(s.cast)}</p>`:''}${s.dialogue?`<p><b>Dialogue:</b> ${esc(s.dialogue.slice(0,130))}</p>`:''}<div class="sceneactions"><button class="btn sm" data-scene-edit="${esc(s.id)}">Edit</button><button class="btn sm danger" data-scene-delete="${esc(s.id)}">Delete</button><label class="btn sm filebtn">Attach shot image<input type="file" data-scene-image="${esc(s.id)}" accept="image/*"></label></div></div></article>`).join(''):'<div class="empty">No scene records for this episode in this local workspace. Add a scene above, or import an existing project backup. Your previous materials have not been replaced.</div>';showPhotos();}
