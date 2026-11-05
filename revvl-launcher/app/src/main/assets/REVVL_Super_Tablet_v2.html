@@ -44,35 +44,44 @@
 <iframe id="revvl-character-frame" src="http://127.0.0.1:8770/creator.html" title="REVVL 3D Character Creator" style="display:block;width:100%;height:1380px;background:#091421;border:1px solid #31576e;border-radius:14px"></iframe>
 <p class="minor">Only the locally selected approved photo is transferred to the character tool. No model is automatically marked an exact or production-approved likeness.</p>
 
-<div class="panel" id="daz-workstation" style="margin-top:20px">
-  <div class="eyebrow">Desktop character modeling · External workstation</div>
-  <h2>Daz Studio — Realistic 3D Character Pipeline</h2>
-  <p class="minor">Daz Studio runs on a compatible Windows or macOS workstation, not directly on your Android tablet. Use your tablet to save the approved portrait and a character brief; complete Face Transfer / Genesis fitting in Daz Studio on the workstation. Facial accuracy requires manual review. Nothing is sent to Daz automatically.</p>
+<div class="panel" id="character-workstation" style="margin-top:20px">
+  <div class="eyebrow">Free-first character modeling · Workstation workflow</div>
+  <h2>Blender + MPFB — Free, open-source character creation</h2>
+  <p class="minor">Use the approved portraits as references for a customized 3D human in Blender with the free MPFB (MakeHuman Plugin for Blender) add-on. MPFB creates meshes, materials and rigs; it does NOT automatically produce an exact lookalike from one picture. Refine facial geometry and materials manually, then test the rig and expressions.</p>
   <div class="actions">
-    <a class="btn primary" href="https://www.daz3d.com/get_studio" target="_blank" rel="noopener noreferrer">Open Daz Studio (official)</a>
-    <a class="btn" href="https://www.daz3d.com/face-transfer-2" target="_blank" rel="noopener noreferrer">Face Transfer 2</a>
-    <a class="btn" href="https://www.daz3d.com/daz-to-blender-overview" target="_blank" rel="noopener noreferrer">Daz → Blender Bridge</a>
-    <a class="btn" href="https://remotedesktop.google.com/" target="_blank" rel="noopener noreferrer">Remote desktop</a>
+    <a class="btn primary" href="https://www.blender.org/download/" target="_blank" rel="noopener noreferrer">Get Blender — free</a>
+    <a class="btn" href="https://extensions.blender.org/add-ons/mpfb/" target="_blank" rel="noopener noreferrer">Get MPFB — free</a>
+    <a class="btn" href="https://www.makehumancommunity.org/mpfb/" target="_blank" rel="noopener noreferrer">MPFB documentation</a>
+    <a class="btn" href="https://remotedesktop.google.com/" target="_blank" rel="noopener noreferrer">Remote workstation</a>
   </div>
-  <p class="minor">Daz Studio is free to get started. Face Transfer 2's unlimited saving option is paid; trial limits apply. Daz-to-Blender compatibility depends on installed versions, so verify the bridge before exporting characters.</p>
   <div class="two" style="margin-top:16px">
     <div class="panel">
       <h2>Prepare an approved cast member</h2>
       <div class="field">
-        <label for="daz-cast-picker">Official approved character</label>
-        <select id="daz-cast-picker" aria-label="Approved character for Daz Studio"><option value="">Choose character</option></select>
+        <label for="character-cast-picker">Official approved character</label>
+        <select id="character-cast-picker" aria-label="Approved character for modeling"><option value="">Choose character</option></select>
       </div>
       <div class="actions" style="margin-top:10px">
-        <button class="btn primary" type="button" id="daz-save-portrait">Save approved portrait</button>
-        <button class="btn" type="button" id="daz-save-brief">Export Daz character brief</button>
+        <button class="btn primary" type="button" id="character-save-portrait">Save approved portrait</button>
+        <button class="btn" type="button" id="character-save-free-brief">Export FREE Blender modeling brief</button>
       </div>
-      <p class="minor">The portrait is downloaded locally from this browser's saved cast. It is not recreated, enhanced, or automatically sent to a third party.</p>
+      <p class="minor">Your saved approved portrait downloads locally without alteration. These buttons do not transmit photos to external websites or claim a 3D likeness was generated.</p>
     </div>
     <div class="panel">
-      <h2>Production workflow</h2>
-      <p class="minor">1. Transfer the approved portrait to your workstation. 2. In Daz Studio, fit a Genesis 9 figure using Face Transfer 2 and manual morph controls. 3. Verify face shape, hair, skin, and wardrobe. 4. Export with compatible Daz-to-Blender Bridge. 5. Verify skin weights, facial morphs and animation in Blender before final rendering.</p>
-      <div class="note">Status: Daz Studio has been added as an external workstation workflow. No Daz account, Face Transfer license, desktop software, or live Blender connection has been configured by this dashboard.</div>
+      <h2>Free production pipeline</h2>
+      <p class="minor">1. Import the approved portrait as a Blender reference. 2. Build the human base mesh in MPFB. 3. Match facial dimensions using additional front/side references. 4. Set skin, eyes, hair and approved wardrobe. 5. Use MPFB/Rigify for the skeleton. 6. Add facial morphs and speech controls. 7. Export a rigged GLB and inspect likeness, skin weights, animation and lip-sync before release.</p>
+      <div class="note">Requires a compatible computer or cloud workstation running Blender. Android REVVL serves as the control and file-transfer screen. No automatic photo-accurate reconstruction is implied.</div>
     </div>
+  </div>
+  <div class="panel" id="daz-workstation" style="margin-top:18px">
+    <h2>Daz Studio — Optional, paid-feature route</h2>
+    <p class="minor">Daz Studio's base application is free, but the full workflow needed for eight realistic characters may cost money. Face Transfer 2 is separately sold (listed at US $49.95 when checked), the trial limits saved unwatermarked figures, and some Genesis assets are paid. Daz is NOT required for the free Blender/MPFB workflow.</p>
+    <div class="actions">
+      <a class="btn" href="https://www.daz3d.com/get_studio" target="_blank" rel="noopener noreferrer">Daz Studio base download</a>
+      <a class="btn" href="https://www.daz3d.com/face-transfer-2" target="_blank" rel="noopener noreferrer">Check Face Transfer 2 pricing</a>
+      <button class="btn" type="button" id="character-save-daz-brief">Export optional Daz brief</button>
+    </div>
+    <p class="minor">No purchase, subscription, account sign-in, workstation integration, or automatic installation has been performed.</p>
   </div>
 </div>
 </section>
@@ -149,12 +158,12 @@ async function clearImages(){try{let d=await db();await new Promise((resolve,rej
 async function photoFromFile(file){if(!file||!file.type.startsWith('image/'))throw Error('Select an image file');if(file.size>18*1024*1024)throw Error('Image is too large (18 MB maximum)');return new Promise((resolve,reject)=>{let reader=new FileReader();reader.onload=()=>{let img=new Image();img.onload=()=>{let scale=Math.min(1,1100/Math.max(img.width,img.height));let canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);resolve(canvas.toDataURL('image/jpeg',.83));};img.onerror=()=>reject(Error('Cannot read image'));img.src=reader.result;};reader.onerror=()=>reject(Error('Cannot read file'));reader.readAsDataURL(file);});}
 async function showPhotos(){let nodes=$$('[data-photo]');for(let node of nodes){let key=node.dataset.photo;let data=await getImage(key);if(!node.isConnected)continue;if(data){let img=document.createElement('img');img.src=data;img.alt='Uploaded approved portrait or storyboard image';node.replaceChildren(img);}else node.textContent=key.startsWith('cast:')?'Approved photo not loaded':'No storyboard image attached';}}
 const ep=()=>project.episodes[episodeIdx];const total=()=>ep().scenes.reduce((a,s)=>a+(Number(s.seconds)||0),0);
-function show(view){if(!$('#view-'+view))return;$$('.view').forEach(n=>n.classList.toggle('active',n.id==='view-'+view));$$('.navbtn').forEach(n=>n.classList.toggle('active',n.dataset.view===view));$('#page-name').textContent='COMMAND CENTER / '+({home:'OVERVIEW',studio:'DRAMA STUDIO',chatgpt:'CHATGPT',rigging:'3D CHARACTER CREATOR',cloud:'AI & CLOUD',gaming:'GAMING',files:'BACKUP & SETUP'}[view]||view);location.hash=view;window.scrollTo({top:0,behavior:'instant'});if(view==='studio')renderStudio();if(view==='rigging')renderDazCastPicker();if(view==='chatgpt')checkChatAPI();if(view==='files')renderEnvironment();}
+function show(view){if(!$('#view-'+view))return;$$('.view').forEach(n=>n.classList.toggle('active',n.id==='view-'+view));$$('.navbtn').forEach(n=>n.classList.toggle('active',n.dataset.view===view));$('#page-name').textContent='COMMAND CENTER / '+({home:'OVERVIEW',studio:'DRAMA STUDIO',chatgpt:'CHATGPT',rigging:'3D CHARACTER CREATOR',cloud:'AI & CLOUD',gaming:'GAMING',files:'BACKUP & SETUP'}[view]||view);location.hash=view;window.scrollTo({top:0,behavior:'instant'});if(view==='studio')renderStudio();if(view==='rigging')renderCharacterWorkbench();if(view==='chatgpt')checkChatAPI();if(view==='files')renderEnvironment();}
 $$('[data-view]').forEach(n=>n.addEventListener('click',()=>show(n.dataset.view)));$$('[data-go]').forEach(n=>n.addEventListener('click',()=>show(n.dataset.go)));
 function renderPick(){let picker=$('#episode-picker');picker.innerHTML=project.episodes.map((e,i)=>`<option value="${i}">Episode ${i+1}</option>`).join('');picker.value=episodeIdx;}
 
-function renderDazCastPicker(){
- const picker=$('#daz-cast-picker');
+function renderCharacterWorkbench(){
+ const picker=$('#character-cast-picker');
  if(!picker)return;
  const current=picker.value;
  picker.replaceChildren();
@@ -165,9 +174,14 @@ function renderDazCastPicker(){
  }
  if(project.cast.some(c=>c.name===current))picker.value=current;
 }
-$('#daz-save-portrait').addEventListener('click',async()=>{
- const name=$('#daz-cast-picker').value;
- if(!name){toast('Choose an approved character first');return;}
+function chosenCharacter(){
+ const name=$('#character-cast-picker').value;
+ if(!name){toast('Choose an approved character first');return null;}
+ return project.cast.find(c=>c.name===name)||null;
+}
+$('#character-save-portrait').addEventListener('click',async()=>{
+ const person=chosenCharacter();if(!person)return;
+ const name=person.name;
  const portrait=await getImage('cast:'+name);
  if(typeof portrait!=='string'||!/^data:image\/(?:jpeg|png|webp);base64,/.test(portrait)){
   toast('Approved portrait is not saved in this browser. Check Approved Cast.');return;
@@ -177,24 +191,46 @@ $('#daz-save-portrait').addEventListener('click',async()=>{
  document.body.appendChild(a);a.click();a.remove();
  toast('Approved portrait downloaded to this device');
 });
-$('#daz-save-brief').addEventListener('click',()=>{
- const name=$('#daz-cast-picker').value;
- if(!name){toast('Choose an approved character first');return;}
- const person=project.cast.find(c=>c.name===name);
- if(!person)return;
+$('#character-save-free-brief').addEventListener('click',()=>{
+ const person=chosenCharacter();if(!person)return;
  const brief={
-  format:'REVVL_DAZ_CHARACTER_PREP_V1',
+  format:'REVVL_BLENDER_MPFB_CHARACTER_PREP_V1',
   series:project.series,
   character:{name:person.name,role:person.role||'',wardrobe:person.wardrobe||''},
-  source_image:filename(name)+'_Approved_Reference.jpg',
-  source_policy:'Use only approved reference photographs; do not generate substitute faces.',
-  target:'Daz Studio Genesis 9 using Face Transfer 2 as starting point, then manual shape/material fitting',
-  pipeline:['Copy approved portrait to workstation','Create Genesis 9 character in Daz Studio','Apply Face Transfer 2 if licensed and available','Refine face, hair, eyes, complexion, wardrobe manually','Verify facial likeness against original in multiple views','Transfer with a compatible Daz to Blender Bridge','Validate skeleton, facial morphs, visemes, mesh and textures'],
+  source_image:'Use the saved original approved portrait for this character, plus user-provided side/front references when available.',
+  source_policy:'Use only approved references; never substitute generated faces without user approval.',
+  target:'Blender + free open-source MPFB human generator / Rigify; no paid Daz dependency',
+  pipeline:[
+    'Transfer the original approved portrait to your computer or cloud workstation',
+    'Import photograph as a reference into Blender; install free MPFB add-on',
+    'Create human mesh and refine proportions and face by visual comparison',
+    'Obtain side-view and 3/4 references when needed: one photo cannot determine exact face depth',
+    'Create realistic materials, eyes, hair and approved clothing',
+    'Set up humanoid rig with MPFB or Rigify; add visemes, blink and expression morphs',
+    'Export to GLB/GLTF and verify skin deformation, facial motion and animation',
+    'Compare multi-angle renders against approved photos before character approval'
+  ],
   validation:{exact_likeness_verified:false,rig_verified:false,lip_sync_verified:false,release_blocked:true},
-  notes:'This JSON is a modeling handoff brief, not a Daz .duf or an animation-ready character.'
+  notes:'Planning handoff only: does not create a finished 3D model or guarantee exact likeness.'
  };
- download(filename(name)+'_Daz_Character_Brief.json',JSON.stringify(brief,null,2),'application/json');
- toast('Daz character brief exported');
+ download(filename(person.name)+'_FREE_Blender_Character_Brief.json',JSON.stringify(brief,null,2),'application/json');
+ toast('Free Blender character brief exported');
+});
+$('#character-save-daz-brief').addEventListener('click',()=>{
+ const person=chosenCharacter();if(!person)return;
+ const brief={
+  format:'REVVL_DAZ_OPTIONAL_CHARACTER_PREP_V2',
+  series:project.series,
+  character:{name:person.name,role:person.role||'',wardrobe:person.wardrobe||''},
+  source_image:'Use saved original approved portrait; do not generate substitute faces',
+  tool:'Optional Daz Studio Genesis 9 plus paid Face Transfer 2 where licensed',
+  paid_features:'Face Transfer 2 and some assets may require purchase; confirm current store pricing',
+  pipeline:['Copy approved portrait to desktop workstation','Create Genesis 9 base character','Optionally use Face Transfer 2 with appropriate license','Refine likeness, eyes, hairstyle, complexion and wardrobe manually','Export to compatible Blender format and verify mesh, skeleton, skin weights and visemes'],
+  validation:{exact_likeness_verified:false,rig_verified:false,lip_sync_verified:false,release_blocked:true},
+  notes:'Optional paid tool handoff brief, not a generated Daz scene or a completed rig.'
+ };
+ download(filename(person.name)+'_OPTIONAL_Daz_Character_Brief.json',JSON.stringify(brief,null,2),'application/json');
+ toast('Optional Daz character brief exported');
 });
 
 function renderStudio(){renderPick();$('#project-name').value=project.series;$('#episode-title').value=ep().title;renderTiming();renderScenes();renderCast();renderChecks();}
