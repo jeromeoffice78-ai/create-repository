@@ -3,13 +3,11 @@ package com.revvl.supertablet;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -21,237 +19,181 @@ import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/**
+ * One tap starts a localhost dashboard served by this app, then opens Chrome.
+ * Works with the Google Play Termux edition, which lacks RUN_COMMAND.
+ * The old Termux-based services remain untouched if already running.
+ */
 public final class MainActivity extends Activity {
-    private static final String DASHBOARD = "http://127.0.0.1:8766/REVVL_Super_Tablet_v2.html";
-    private static final String PERMISSION = "com.termux.permission.RUN_COMMAND";
-    private static final String SCRIPT = "/data/data/com.termux/files/home/supertab/bin/REVVL-services.sh";
-    private final Handler handler = new Handler(Looper.getMainLooper());
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private static final String URL = DashboardService.DASHBOARD;
+    private final Handler ui = new Handler(Looper.getMainLooper());
+    private final ExecutorService checks = Executors.newSingleThreadExecutor();
     private TextView status;
-    private Button retry, permissions, openTermux;
+    private Button retry;
+    private Button openTermux;
     private boolean visible = false;
+    private boolean opened = false;
     private boolean ready = false;
-    private boolean browserOpened = false;
     private int generation = 0;
-    private int attempts = 0;
 
-    @Override public void onCreate(Bundle state) {
-        super.onCreate(state);
+    @Override public void onCreate(Bundle saved) {
+        super.onCreate(saved);
         getWindow().setStatusBarColor(Color.rgb(8,17,31));
         getWindow().setNavigationBarColor(Color.rgb(8,17,31));
-        createView();
-        begin();
+        layout();
+        start();
     }
-
-    @Override protected void onResume() {
+    @Override public void onResume() {
         super.onResume();
         visible = true;
-        if (ready && !browserOpened) launchBrowser();
+        if (ready && !opened) launchBrowser();
     }
-
-    @Override protected void onPause() {
-        visible = false;
-        super.onPause();
-    }
-
-    @Override protected void onDestroy() {
+    @Override public void onPause() { visible = false; super.onPause(); }
+    @Override public void onDestroy() {
         generation++;
-        handler.removeCallbacksAndMessages(null);
-        executor.shutdownNow();
+        ui.removeCallbacksAndMessages(null);
+        checks.shutdownNow();
         super.onDestroy();
     }
-
-    private int dp(int value) {
-        return (int)(value*getResources().getDisplayMetrics().density+0.5f);
+    private int dp(int n) {
+        return (int)(n*getResources().getDisplayMetrics().density+0.5f);
     }
-
-    private Button button(String text, Runnable callback) {
+    private Button makeButton(String title, Runnable callback) {
         Button b = new Button(this);
-        b.setText(text);
+        b.setText(title);
         b.setAllCaps(false);
         b.setTextColor(Color.WHITE);
-        b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(26,59,82)));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1,dp(52));
-        lp.topMargin = dp(14);
+        b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(27,61,83)));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(54));
+        lp.topMargin=dp(16);
         b.setLayoutParams(lp);
         b.setOnClickListener(v -> callback.run());
         return b;
     }
-
-    private void createView() {
-        LinearLayout pane = new LinearLayout(this);
-        pane.setOrientation(LinearLayout.VERTICAL);
-        pane.setGravity(Gravity.CENTER_HORIZONTAL);
-        pane.setPadding(dp(24),dp(54),dp(24),dp(24));
-        pane.setBackgroundColor(Color.rgb(8,17,31));
+    private void layout() {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.VERTICAL);
+        l.setGravity(Gravity.CENTER_HORIZONTAL);
+        l.setPadding(dp(23),dp(52),dp(23),dp(25));
+        l.setBackgroundColor(Color.rgb(8,17,31));
         TextView title = new TextView(this);
         title.setText("REVVL\nSUPER TABLET");
-        title.setTextSize(31);
-        title.setTypeface(null, 1);
+        title.setTextSize(32);
+        title.setTypeface(null,1);
         title.setGravity(Gravity.CENTER);
         title.setTextColor(Color.WHITE);
-        pane.addView(title,new LinearLayout.LayoutParams(-1,-2));
-        TextView caption = new TextView(this);
-        caption.setText("One tap • Connect services • Open dashboard");
-        caption.setTextSize(14);
-        caption.setGravity(Gravity.CENTER);
-        caption.setTextColor(Color.rgb(103,226,185));
-        LinearLayout.LayoutParams captionLp=new LinearLayout.LayoutParams(-1,-2);
-        captionLp.topMargin=dp(18);
-        pane.addView(caption,captionLp);
-        ProgressBar spinner=new ProgressBar(this);
-        LinearLayout.LayoutParams spinnerLp=new LinearLayout.LayoutParams(dp(50),dp(50));
-        spinnerLp.topMargin=dp(42);
-        spinnerLp.bottomMargin=dp(20);
-        pane.addView(spinner,spinnerLp);
+        l.addView(title,new LinearLayout.LayoutParams(-1,-2));
+        TextView description=new TextView(this);
+        description.setText("One tap • Start dashboard • Open Chrome");
+        description.setGravity(Gravity.CENTER);
+        description.setTextSize(15);
+        description.setTextColor(Color.rgb(101,228,187));
+        LinearLayout.LayoutParams descLp=new LinearLayout.LayoutParams(-1,-2);
+        descLp.topMargin=dp(22);
+        l.addView(description,descLp);
+        ProgressBar p=new ProgressBar(this);
+        LinearLayout.LayoutParams pLp=new LinearLayout.LayoutParams(dp(50),dp(50));
+        pLp.topMargin=dp(52);
+        pLp.bottomMargin=dp(26);
+        l.addView(p,pLp);
         status=new TextView(this);
-        status.setTextColor(Color.WHITE);
         status.setTextSize(16);
+        status.setTextColor(Color.WHITE);
         status.setGravity(Gravity.CENTER);
-        pane.addView(status,new LinearLayout.LayoutParams(-1,-2));
-        retry=button("Retry launch",this::begin);
-        permissions=button("Grant Termux permission",this::openSettings);
-        openTermux=button("Open Termux",this::openTermux);
-        pane.addView(retry);
-        pane.addView(permissions);
-        pane.addView(openTermux);
-        setContentView(pane);
+        l.addView(status,new LinearLayout.LayoutParams(-1,-2));
+        retry=makeButton("Retry dashboard launch",this::start);
+        openTermux=makeButton("Open Linux tools in Termux",this::openTermux);
+        l.addView(retry);
+        l.addView(openTermux);
+        setContentView(l);
     }
-
-    private void message(String text) { status.setText(text); }
-
-    private void begin() {
+    private void start() {
         generation++;
         final int id=generation;
-        ready=false;
-        browserOpened=false;
-        attempts=0;
+        ready=false; opened=false;
         retry.setVisibility(View.GONE);
-        permissions.setVisibility(View.GONE);
         openTermux.setVisibility(View.GONE);
-        message("Checking local dashboard...");
-        executor.execute(() -> {
-            boolean running=checkDashboard();
-            handler.post(() -> {
+        status.setText("Checking your existing dashboard...");
+        checks.execute(() -> {
+            boolean available=checkDashboard();
+            ui.post(() -> {
                 if (id!=generation || isFinishing()) return;
-                // When the dashboard already works, open it even if the
-                // installed Termux variant does not expose RUN_COMMAND.
-                // Starting stopped services still requires explicit permission.
-                if (running) onReady();
-                else startServices();
+                if (available) onReady();
+                else startOwnServer(id);
             });
         });
     }
-
     private boolean checkDashboard() {
         HttpURLConnection c=null;
         try {
-            c=(HttpURLConnection)new URL(DASHBOARD).openConnection();
-            c.setConnectTimeout(600);
-            c.setReadTimeout(750);
-            c.setInstanceFollowRedirects(false);
+            c=(HttpURLConnection)new URL(URL).openConnection();
+            c.setConnectTimeout(850);
+            c.setReadTimeout(950);
             c.setRequestMethod("GET");
-            int code=c.getResponseCode();
-            return code==200 && (c.getContentType()==null || c.getContentType().contains("text/html"));
+            int status=c.getResponseCode();
+            return status==200 && c.getContentType()!=null && c.getContentType().contains("text/html");
         } catch (Exception e) { return false; }
-        finally { if(c!=null)c.disconnect(); }
+        finally { if (c!=null) c.disconnect(); }
     }
-
-    private void startServices() {
-        if (checkSelfPermission(PERMISSION)!=PackageManager.PERMISSION_GRANTED) {
-            message("Allow this launcher to run commands in Termux. This permission is needed only when starting the dashboard services.");
-            permissions.setVisibility(View.VISIBLE);
-            retry.setVisibility(View.VISIBLE);
-            requestPermissions(new String[]{PERMISSION},615);
-            return;
-        }
+    private void startOwnServer(int id) {
+        status.setText("Starting your REVVL dashboard locally...");
         try {
-            Intent i=new Intent("com.termux.RUN_COMMAND");
-            i.setClassName("com.termux","com.termux.app.RunCommandService");
-            i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash");
-            i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",new String[]{SCRIPT});
-            i.putExtra("com.termux.RUN_COMMAND_WORKDIR","/data/data/com.termux/files/home");
-            i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true);
-            startService(i);
-        } catch (Exception error) {
-            message("Termux could not start: "+error.getClass().getSimpleName()+". Check additional permissions and allow-external-apps=true.");
+            Intent i=new Intent(this, DashboardService.class);
+            startForegroundService(i);
+        } catch (Exception e) {
+            status.setText("Could not start dashboard: "+e.getClass().getSimpleName()+". Try Retry, or open Termux for diagnostics.");
             retry.setVisibility(View.VISIBLE);
-            permissions.setVisibility(View.VISIBLE);
             openTermux.setVisibility(View.VISIBLE);
             return;
         }
-        message("Starting your REVVL services...");
-        poll(generation);
+        poll(id,0);
     }
-
-    private void poll(int id) {
-        if (isFinishing() || id!=generation) return;
-        if (++attempts>45) {
-            message("The dashboard did not respond. Check the Termux setup and tap Retry.");
+    private void poll(int id, int attempt) {
+        if (id!=generation || isFinishing()) return;
+        if (attempt>38) {
+            status.setText("Dashboard did not start. Your original Termux setup is untouched.");
             retry.setVisibility(View.VISIBLE);
-            permissions.setVisibility(View.VISIBLE);
             openTermux.setVisibility(View.VISIBLE);
             return;
         }
-        executor.execute(() -> {
-            boolean running=checkDashboard();
-            handler.post(() -> {
+        checks.execute(() -> {
+            boolean available=checkDashboard();
+            ui.post(() -> {
                 if (id!=generation || isFinishing()) return;
-                if (running) onReady();
-                else handler.postDelayed(() -> poll(id),700);
+                if (available) onReady();
+                else ui.postDelayed(() -> poll(id,attempt+1),500);
             });
         });
     }
-
     private void onReady() {
         ready=true;
-        message("Dashboard ready. Opening Chrome...");
+        status.setText("Dashboard ready. Opening Chrome...");
         if (visible) launchBrowser();
     }
-
     private void launchBrowser() {
-        if (browserOpened || !visible) return;
-        Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(DASHBOARD));
-        intent.addCategory(Intent.CATEGORY_BROWSABLE);
-        intent.setPackage("com.android.chrome");
+        if (!visible || opened) return;
+        Intent view=new Intent(Intent.ACTION_VIEW,Uri.parse(URL));
+        view.addCategory(Intent.CATEGORY_BROWSABLE);
+        view.setPackage("com.android.chrome");
         try {
-            startActivity(intent);
-            browserOpened=true;
+            startActivity(view);
+            opened=true;
             finish();
         } catch (ActivityNotFoundException noChrome) {
-            intent.setPackage(null);
+            view.setPackage(null);
             try {
-                startActivity(intent);
-                browserOpened=true;
-                finish();
-            } catch (Exception error) { onBrowserError(); }
-        } catch (Exception error) { onBrowserError(); }
+                startActivity(view); opened=true; finish();
+            } catch (Exception e) { browserError(); }
+        } catch (Exception e) { browserError(); }
     }
-
-    private void onBrowserError() {
-        message("Dashboard is ready; open this address in Chrome: "+DASHBOARD);
+    private void browserError() {
+        status.setText("Dashboard is running. Open this address in Chrome:\n"+URL);
         retry.setVisibility(View.VISIBLE);
+        openTermux.setVisibility(View.VISIBLE);
     }
-
-    @Override public void onRequestPermissionsResult(int code,String[] p,int[] results) {
-        super.onRequestPermissionsResult(code,p,results);
-        if(code!=615) return;
-        if(results.length>0 && results[0]==PackageManager.PERMISSION_GRANTED) begin();
-        else {
-            message("Use Android Settings → Apps → REVVL Super Tablet → Permissions → Additional permissions, then allow Run commands in Termux environment.");
-            retry.setVisibility(View.VISIBLE);
-            permissions.setVisibility(View.VISIBLE);
-            openTermux.setVisibility(View.VISIBLE);
-        }
-    }
-
-    private void openSettings() {
-        startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));
-    }
-
     private void openTermux() {
-        Intent launch=getPackageManager().getLaunchIntentForPackage("com.termux");
-        if (launch!=null) startActivity(launch);
-        else message("Termux is unavailable. Keep your installed Termux app and its files.");
+        Intent i=getPackageManager().getLaunchIntentForPackage("com.termux");
+        if(i!=null) startActivity(i);
+        else status.setText("Termux isn't installed, but the local REVVL dashboard can still run.");
     }
 }
