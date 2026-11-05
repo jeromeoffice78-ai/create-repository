@@ -134,9 +134,11 @@ public final class MainActivity extends Activity {
             boolean running=checkDashboard();
             handler.post(() -> {
                 if (id!=generation || isFinishing()) return;
-                // Always start both services, even when port 8766 already responds.
-                // Permission is required to start port 8765 or the optional bridge.
-                startServices();
+                // When the dashboard already works, open it even if the
+                // installed Termux variant does not expose RUN_COMMAND.
+                // Starting stopped services still requires explicit permission.
+                if (running) onReady();
+                else startServices();
             });
         });
     }
