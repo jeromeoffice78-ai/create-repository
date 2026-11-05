@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>REVVL Compute Center</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,Arial,sans-serif;background:#071321;color:#eaf9fc}
+*{box-sizing:border-box}body{margin:0;padding:12px}main{max-width:900px;margin:auto}
+h1{font-size:clamp(22px,5vw,31px);margin:8px 0}h2{font-size:19px}
+p{line-height:1.5;color:#bed2dd}small{color:#a8c4d0}
+.panel{border:1px solid #315870;background:#112637;border-radius:12px;padding:15px;margin:12px 0}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:12px}
+label{display:block;font-weight:650;margin:9px 0 6px}
+input,select{min-width:0;width:100%;border:1px solid #3c6b75;padding:10px;border-radius:8px;background:#071723;color:white;font-size:15px}
+button{border:1px solid #359b84;border-radius:9px;padding:11px 16px;min-height:44px;background:#145249;color:white;font-weight:700;cursor:pointer}
+button.secondary{background:#193a4d;border-color:#3b6988}button:disabled{opacity:.45;cursor:not-allowed}
+#status{font-size:14px;border:1px solid #3b627a;padding:7px 11px;border-radius:20px;display:inline-block}
+#events{white-space:pre-wrap;overflow-wrap:anywhere;background:#061b28;padding:13px;border-radius:8px;max-height:180px;overflow:auto}
+.job{background:#091c29;padding:10px;margin:9px 0;border:1px solid #305165;border-radius:8px}
+.job small{display:block;margin:4px 0}code{overflow-wrap:anywhere}
+</style></head><body><main>
+<p><small>REVVL Super Tablet • Hardware and remote compute</small></p><h1>Supercomputer Control Center</h1>
+<p>The tablet remains a lightweight Android device. This console can securely connect to a separate CPU/GPU workstation so demanding jobs run remotely. Nothing is billed or executed without your action. Nia and satellite networking are not included.</p>
+<div class="panel"><h2>Tablet hardware diagnostics</h2><div id="tablet-hardware">Checking local browser capabilities…</div><p><small>Values describe browser capabilities, not the full specifications of your device.</small></p></div>
+<div class="panel"><h2>1. Connect your compute workstation</h2>
+<div class="grid"><div><label for="endpoint">Compute gateway HTTPS address</label><input id="endpoint" type="url" spellcheck="false" placeholder="https://compute.example.com" autocomplete="url"></div><div><label for="token">Private gateway access token</label><input id="token" type="password" spellcheck="false" placeholder="Paste your workstation access token" autocomplete="off"></div></div>
+<p><small>The access token stays in this tab's memory only and is cleared from the input after connection. Remote addresses must use HTTPS, except loopback development connections on the same device.</small></p>
+<div class="row"><button id="connect">Connect and test</button><button id="disconnect" class="secondary" disabled>Disconnect</button><span id="status" role="status">Not connected</span></div>
+<div id="workstation">No remote workstation connected.</div>
+</div>
+<div class="panel"><h2>2. Submit an approved compute job</h2>
+<p>These tasks test actual remote CPU, GPU, or Blender operation. They do <strong>not</strong> render your episode or create a character automatically.</p>
+<div class="grid"><div><label for="job-kind">Job type</label><select id="job-kind"><option value="cpu-matmul">CPU matrix benchmark</option><option value="gpu-matmul">GPU matrix benchmark</option><option value="blender-smoke">Blender diagnostic render</option></select></div>
+<div><label for="matrix-size">Matrix size (CPU max 1024)</label><select id="matrix-size"><option value="64">64 × 64</option><option value="256" selected>256 × 256</option><option value="512">512 × 512</option><option value="1024">1024 × 1024</option><option value="2048">2048 × 2048 (GPU only)</option></select></div><div><label for="frames">Blender test frames</label><select id="frames"><option value="1" selected>1</option><option value="4">4</option><option value="12">12</option></select></div></div>
+<div class="row"><button id="submit" disabled>Start remote job</button><button id="refresh" class="secondary" disabled>Refresh job history</button></div>
+<p><small>Remote GPU usage may incur cloud-provider charges even for benchmark jobs. The compute gateway must already be running on a workstation you control.</small></p><div id="jobs">No jobs loaded.</div></div>
+<div class="panel"><h2>Connection diagnostics</h2><div id="events" role="log" aria-live="polite">Ready to connect.</div><p><small>No files, approved photos, scripts, API keys, or cast assets are transferred to the workstation. Job reports are downloadable manually.</small></p></div>
+</main>
+<script>
+(function(){'use strict';
+const $=id=>document.getElementById(id); let base='', bearer='', connected=false, poll=null; const jobs=new Map();
+function notice(m){const e=document.createElement('div');e.textContent=new Date().toLocaleTimeString()+' • '+m;$('events').appendChild(e);$('events').scrollTop=$('events').scrollHeight;while($('events').children.length>30)$('events').firstChild.remove()}
+function controls(){ $('submit').disabled=!connected;$('refresh').disabled=!connected;$('disconnect').disabled=!connected;$('connect').disabled=connected; }
+function reset(){connected=false;bearer='';base='';jobs.clear();if(poll){clearInterval(poll);poll=null;}$('status').textContent='Not connected';$('workstation').textContent='No remote workstation connected.';$('jobs').textContent='No jobs loaded.';$('token').value='';controls()}
+function validEndpoint(raw){let u;try{u=new URL(raw.trim())}catch(e){throw Error('Enter a complete HTTPS address')}
+if(u.username||u.password||u.search||u.hash)throw Error('Use a plain HTTPS server address without credentials or query strings');
+const loopback=['127.0.0.1','localhost','[::1]'].includes(u.hostname);
+if(u.protocol!=='https:'&&!(loopback&&u.protocol==='http:'))throw Error('Remote workstations require HTTPS, not public HTTP');
+if(u.pathname!=='/'&&u.pathname!=='')throw Error('Enter the server root address, without an API path');
+return u.origin;
+}
+async function api(path,opts={}){
+if(!connected&&!bearer)throw Error('Connect first');
+const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),12000);
+try{const res=await fetch(base+path,{...opts,cache:'no-store',mode:'cors',headers:{Authorization:'Bearer '+bearer,'Content-Type':'application/json',...(opts.headers||{})},signal:controller.signal});
+if(!res.ok){let err;try{err=(await res.json()).detail}catch(e){}throw Error(typeof err==='string'?err:'Gateway HTTP '+res.status)}
+return res;
+}finally{clearTimeout(timer)}
+}
+function displayStatus(s){const fields=[['Service',s.service],['Remote CPU cores',s.cpu_cores],['System',s.platform],['GPU',s.gpu?.available?(s.gpu.name||s.gpu.backend):'Not detected'],['Blender',s.blender_available?'Installed':'Not detected'],['Active remote jobs',s.queued_or_running+' / '+s.max_active]];
+const list=document.createElement('div');for(const [k,v] of fields){const p=document.createElement('p');const key=document.createElement('b');key.textContent=k+': ';p.append(key,document.createTextNode(String(v)));list.appendChild(p)}$('workstation').replaceChildren(list);
+}
+async function connect(){try{const url=validEndpoint($('endpoint').value);const secret=$('token').value;if(secret.length<16)throw Error('Enter the workstation access token (16+ characters)');base=url;bearer=secret;
+const res=await api('/v1/status');const data=await res.json();if(data.service!=='REVVL Secure Compute Gateway')throw Error('This is not a REVVL compute gateway');connected=true;$('token').value='';$('status').textContent='Connected (remote compute)';displayStatus(data);controls();notice('Authenticated connection established.');await refreshJobs();poll=setInterval(()=>{if(!document.hidden)refreshJobs(false).catch(e=>notice(e.message))},3000);
+}catch(e){reset();notice('Connection failed: '+(e.message||String(e)))}}
+async function refreshJobs(showLog=true){if(!connected)return;const res=await api('/v1/jobs');const data=await res.json();jobs.clear();for(const j of (data.jobs||[])){jobs.set(j.id,j)}renderJobs();if(showLog)notice('Job history refreshed')}
+function renderJobs(){const host=$('jobs');host.replaceChildren();if(!jobs.size){host.textContent='No jobs on this workstation yet.';return}
+for(const job of jobs.values()){
+const div=document.createElement('div');div.className='job';const h=document.createElement('strong');h.textContent=job.kind+' • '+job.status;div.appendChild(h);
+const s=document.createElement('small');s.textContent='Job ID '+job.id.slice(0,10)+' • '+new Date(job.created_at).toLocaleString();div.appendChild(s);
+if(job.result){const result=document.createElement('small');result.textContent='Result: '+JSON.stringify(job.result);div.appendChild(result)}
+if(job.error){const error=document.createElement('small');error.textContent='Error: '+job.error;div.appendChild(error)}
+if(job.artifact_ready){const b=document.createElement('button');b.className='secondary';b.textContent='Download result ZIP';b.onclick=()=>download(job.id);div.appendChild(b)}
+if(job.status==='queued'||job.status==='running'){const b=document.createElement('button');b.className='secondary';b.textContent='Request cancellation';b.onclick=()=>cancel(job.id);div.appendChild(b)}
+host.appendChild(div)}
+}
+async function submit(){if(!connected)return;const kind=$('job-kind').value,size=Number($('matrix-size').value),frames=Number($('frames').value);
+if(kind==='cpu-matmul'&&size>1024){notice('CPU matrix size must be 1024 or less');return}
+try{$('submit').disabled=true;const res=await api('/v1/jobs',{method:'POST',body:JSON.stringify({kind,size,frames:kind==='blender-smoke'?frames:1})});const j=await res.json();notice('Job queued: '+j.kind+' ('+j.id.slice(0,10)+')');await refreshJobs(false)}catch(e){notice('Job not started: '+(e.message||String(e)))}finally{controls()}}
+async function cancel(id){try{await api('/v1/jobs/'+id+'/cancel',{method:'POST'});notice('Cancellation requested');await refreshJobs(false)}catch(e){notice('Cancellation failed: '+(e.message||String(e)))}}
+async function download(id){try{const res=await api('/v1/jobs/'+id+'/artifact');const blob=await res.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='REVVL_compute_'+id.slice(0,12)+'.zip';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);notice('Downloaded result ZIP')}catch(e){notice('Download failed: '+(e.message||String(e)))}}
+const cores=navigator.hardwareConcurrency||'not reported';const mem=navigator.deviceMemory?String(navigator.deviceMemory)+' GB (estimate)':'not reported';$('tablet-hardware').textContent='Browser CPU concurrency: '+cores+' threads • Browser RAM estimate: '+mem+' • Network: '+(navigator.onLine?'connected':'offline');
+$('connect').addEventListener('click',connect);$('disconnect').addEventListener('click',()=>{reset();notice('Disconnected: credentials cleared')});$('submit').addEventListener('click',submit);$('refresh').addEventListener('click',()=>refreshJobs().catch(e=>notice(e.message)));
+addEventListener('pagehide',reset);controls();
+})();
+</script></body></html>
