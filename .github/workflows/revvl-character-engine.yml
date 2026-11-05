@@ -62,10 +62,7 @@ jobs:
             adb shell am start -W -n com.revvl.supertablet.characterengine/com.revvl.supertablet.rigengine.EngineActivity
             adb forward tcp:18770 tcp:8770
             ok=0
-            for i in $(seq 1 35); do
-              if curl -fsS --max-time 3 -o /tmp/rig-health.json http://127.0.0.1:18770/health; then ok=1; break; fi
-              sleep 2
-            done
+            for i in $(seq 1 35); do if curl -fsS --max-time 3 -o /tmp/rig-health.json http://127.0.0.1:18770/health; then ok=1; break; fi; sleep 2; done
             test "$ok" = 1
             grep -q '"ok":true' /tmp/rig-health.json
             grep -q '"joints":22' /tmp/rig-health.json
@@ -73,12 +70,7 @@ jobs:
             grep -q 'REVVL 3D Character Creator' /tmp/rig-creator.html
             grep -q "REVVL_GET_APPROVED_PHOTO" /tmp/rig-creator.html
             curl -fsS --max-time 8 -o /tmp/rig-template.glb http://127.0.0.1:18770/template.glb
-            python - <<'PY'
-            import pathlib
-            b=pathlib.Path('/tmp/rig-template.glb').read_bytes()
-            assert b[:4]==b'glTF' and len(b)>10000
-            print('Android emulator served rig template:',len(b),'bytes')
-            PY
+            python -c "from pathlib import Path; b=Path('/tmp/rig-template.glb').read_bytes(); assert_ok=b[:4]==b'glTF' and len(b)>10000; print('Android template valid:',assert_ok,len(b),'bytes'); exit(0 if assert_ok else 1)"
       - name: Upload standalone APK
         if: success()
         uses: actions/upload-artifact@v4
