@@ -7,7 +7,7 @@
     <package android:name="com.android.chrome"/>
     <package android:name="com.termux"/>
   </queries>
-  <application android:label="REVVL Super Tablet OneTap"
+  <application android:label="REVVL Super Tablet Recovery"
     android:icon="@drawable/ic_launcher"
     android:theme="@android:style/Theme.Material.NoActionBar"
     android:allowBackup="false"
