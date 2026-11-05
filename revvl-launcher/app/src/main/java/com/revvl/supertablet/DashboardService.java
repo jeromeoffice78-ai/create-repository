@@ -39,7 +39,6 @@ public final class DashboardService extends Service {
     private Thread acceptThread;
     private volatile boolean stopping = false;
     private byte[] page;
-    private byte[] bridgePage;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -55,19 +54,8 @@ public final class DashboardService extends Service {
         }
     }
 
-    private void loadBridge() {
-        try (InputStream in = getAssets().open("REVVL_Nia_Device_Bridge.html");
-             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            byte[] b = new byte[4096]; int n;
-            while ((n = in.read(b)) != -1) out.write(b, 0, n);
-            bridgePage = out.toByteArray();
-        } catch (Exception e) {
-            Log.e(TAG, "Bridge asset missing", e);
-        }
-    }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (page == null || page.length == 0) { stopSelf(); return START_NOT_STICKY; }
-        if (bridgePage == null) loadBridge();
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel channel = new NotificationChannel(CHANNEL, "REVVL local dashboard", NotificationManager.IMPORTANCE_LOW);
@@ -127,15 +115,13 @@ public final class DashboardService extends Service {
             String[] parts = line.split(" ", 3);
             boolean get = parts.length > 1 && ("GET".equals(parts[0]) || "HEAD".equals(parts[0]));
             boolean dashboard = get && ("/".equals(parts[1]) || "/REVVL_Super_Tablet_v2.html".equals(parts[1]) || parts[1].startsWith("/REVVL_Super_Tablet_v2.html?"));
-            boolean bridge = get && bridgePage != null &&
-                ("/REVVL_Nia_Device_Bridge.html".equals(parts[1]) || parts[1].startsWith("/REVVL_Nia_Device_Bridge.html?"));
-            byte[] body = dashboard ? page : bridge ? bridgePage : "Not found".getBytes(StandardCharsets.UTF_8);
-            String status = dashboard || bridge ? "200 OK" : "404 Not Found";
-            String type = dashboard || bridge ? "text/html; charset=utf-8" : "text/plain; charset=utf-8";
+            byte[] body = dashboard ? page : "Not found".getBytes(StandardCharsets.UTF_8);
+            String status = dashboard ? "200 OK" : "404 Not Found";
+            String type = dashboard ? "text/html; charset=utf-8" : "text/plain; charset=utf-8";
             OutputStream out = c.getOutputStream();
             String headers = "HTTP/1.1 " + status + "\r\nContent-Type: " + type +
               "\r\nContent-Length: " + body.length +
-              "\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n";
+              "\r\nCache-Control: no-store\r\nX-REVVL-Server: REVVL-ONE-TAP/3.4\r\nX-Frame-Options: SAMEORIGIN\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n";
             out.write(headers.getBytes(StandardCharsets.ISO_8859_1));
             if (get && !"HEAD".equals(parts[0])) out.write(body);
             out.flush();
