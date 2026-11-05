@@ -39,6 +39,7 @@ public final class DashboardService extends Service {
     private Thread acceptThread;
     private volatile boolean stopping = false;
     private byte[] page;
+    private byte[] computePage;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -54,8 +55,20 @@ public final class DashboardService extends Service {
         }
     }
 
+    private void loadComputePage() {
+        try (InputStream in = getAssets().open("REVVL_Compute_Control.html");
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buf = new byte[8192]; int n;
+            while ((n = in.read(buf)) >= 0) out.write(buf, 0, n);
+            computePage = out.toByteArray();
+        } catch (Exception e) {
+            Log.e(TAG, "Compute Center HTML is unavailable", e);
+        }
+    }
+
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (page == null || page.length == 0) { stopSelf(); return START_NOT_STICKY; }
+        if (computePage == null) loadComputePage();
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel channel = new NotificationChannel(CHANNEL, "REVVL local dashboard", NotificationManager.IMPORTANCE_LOW);
@@ -115,9 +128,13 @@ public final class DashboardService extends Service {
             String[] parts = line.split(" ", 3);
             boolean get = parts.length > 1 && ("GET".equals(parts[0]) || "HEAD".equals(parts[0]));
             boolean dashboard = get && ("/".equals(parts[1]) || "/REVVL_Super_Tablet_v2.html".equals(parts[1]) || parts[1].startsWith("/REVVL_Super_Tablet_v2.html?"));
-            byte[] body = dashboard ? page : "Not found".getBytes(StandardCharsets.UTF_8);
-            String status = dashboard ? "200 OK" : "404 Not Found";
-            String type = dashboard ? "text/html; charset=utf-8" : "text/plain; charset=utf-8";
+            boolean compute = get && computePage != null &&
+                ("/REVVL_Compute_Control.html".equals(parts[1]) ||
+                 parts[1].startsWith("/REVVL_Compute_Control.html?"));
+            boolean found = dashboard || compute;
+            byte[] body = dashboard ? page : compute ? computePage : "Not found".getBytes(StandardCharsets.UTF_8);
+            String status = found ? "200 OK" : "404 Not Found";
+            String type = found ? "text/html; charset=utf-8" : "text/plain; charset=utf-8";
             OutputStream out = c.getOutputStream();
             String headers = "HTTP/1.1 " + status + "\r\nContent-Type: " + type +
               "\r\nContent-Length: " + body.length +
