@@ -138,7 +138,7 @@ public final class DashboardService extends Service {
             OutputStream out = c.getOutputStream();
             String headers = "HTTP/1.1 " + status + "\r\nContent-Type: " + type +
               "\r\nContent-Length: " + body.length +
-              "\r\nCache-Control: no-store\r\nX-REVVL-Server: REVVL-RECOVERY/3.5\r\nX-Frame-Options: SAMEORIGIN\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n";
+              "\r\nCache-Control: no-store\r\nX-REVVL-Server: REVVL-RECOVERY/3.6\r\nX-Frame-Options: SAMEORIGIN\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n";
             out.write(headers.getBytes(StandardCharsets.ISO_8859_1));
             if (get && !"HEAD".equals(parts[0])) out.write(body);
             out.flush();
