@@ -34,13 +34,26 @@ public final class EngineActivity extends Activity {
         status=new TextView(this);status.setTextColor(Color.rgb(112,220,183));status.setTextSize(16);status.setText("Starting the on-device rig creator…");status.setPadding(0,dp(28),0,dp(16));panel.addView(status);
         addButton(panel,"Start / Restart 3D Engine",this::startEngine);
         addButton(panel,"Open 3D Character Creator",()->open(RigService.HOME));
-        addButton(panel,"Return to REVVL Recovery dashboard",()->open("http://127.0.0.1:8788/REVVL_Super_Tablet_v2.html#rigging"));
+        addButton(panel,"Start Recovery dashboard",this::openRecovery);
         TextView note=new TextView(this);note.setText("The rigging service runs only on this device at 127.0.0.1:8770. You can download basic rigged GLB drafts from the browser. Approved photos and Drama Studio projects remain in Recovery. Photorealistic identity reconstruction requires additional modeling and verification.");note.setTextColor(Color.rgb(194,203,217));note.setPadding(0,dp(25),0,0);panel.addView(note);
         setContentView(panel);
         startEngine();
     }
     private void addButton(LinearLayout panel,String text,Runnable action){Button b=new Button(this);b.setText(text);b.setAllCaps(false);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(56));lp.topMargin=dp(12);panel.addView(b,lp);b.setOnClickListener(v->action.run());}
     private void open(String url){Intent i=new Intent(Intent.ACTION_VIEW,Uri.parse(url));i.addCategory(Intent.CATEGORY_BROWSABLE);try{startActivity(i);}catch(Exception e){status.setText("Open Chrome manually: "+url);}}
+    /** Start Recovery's Android Activity first: opening a localhost URL alone cannot
+     * restart a killed dashboard service. Falls back to Chrome if app is absent. */
+    private void openRecovery(){
+        try{
+            Intent recover=new Intent();
+            recover.setClassName("com.revvl.supertablet.recovery","com.revvl.supertablet.MainActivity");
+            recover.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(recover);
+        }catch(Exception e){
+            status.setText("Recovery app not available; trying Chrome. If port 8788 is off, open the Recovery app manually.");
+            open("http://127.0.0.1:8788/REVVL_Super_Tablet_v2.html#rigging");
+        }
+    }
     private void startEngine(){
         status.setText("Starting local 3D service…");
         try{startForegroundService(new Intent(this,RigService.class));}
