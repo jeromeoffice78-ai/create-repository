@@ -134,8 +134,9 @@ public final class MainActivity extends Activity {
             boolean running=checkDashboard();
             handler.post(() -> {
                 if (id!=generation || isFinishing()) return;
-                if (running && checkSelfPermission(PERMISSION)!=PackageManager.PERMISSION_GRANTED) onReady();
-                else startServices();
+                // Always start both services, even when port 8766 already responds.
+                // Permission is required to start port 8765 or the optional bridge.
+                startServices();
             });
         });
     }
