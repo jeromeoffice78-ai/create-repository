@@ -7,7 +7,7 @@ on:
       - ".github/workflows/revvl-build-android.yml"
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   build-debug:
     runs-on: ubuntu-latest
@@ -30,6 +30,20 @@ jobs:
           test -n "$SDKMANAGER"
           echo "Using $SDKMANAGER"
           "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"
+      - name: Check Recovery dashboard JavaScript syntax and updated engine controls
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html=Path('revvl-launcher/app/src/main/assets/REVVL_Super_Tablet_v2.html').read_text()
+          scripts=re.findall(r'<script[^>]*>([\s\S]*?)</script>',html,re.I)
+          assert scripts, 'No inline dashboard scripts'
+          Path('/tmp/revvl-dashboard-js-check.js').write_text('\n'.join(scripts))
+          for required in ['character-engine-test','identifyCharacterEngine','episode_2_saved_scenes','approved_cast_photos_saved']:
+              assert required in html, required+' control missing'
+          print('Validated Recovery diagnostics UI and inline JavaScript extraction')
+          PY
+          node --check /tmp/revvl-dashboard-js-check.js
       - name: Build debug APK
         run: gradle --project-dir revvl-launcher --no-daemon :app:assembleDebug
       - name: Allow Android emulator hardware acceleration
@@ -56,6 +70,16 @@ jobs:
             grep -q 'Supercomputer Control Center' /tmp/revvl-compute.html
             grep -q 'X-REVVL-Server: REVVL-RECOVERY/3.6' /tmp/revvl-compute-headers.txt
             echo "REVVL v3.6 dashboard and compute console served correctly on Android 15."
+      - name: Publish a browser-downloadable Recovery repair APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp revvl-launcher/app/build/outputs/apk/debug/app-debug.apk REVVL_Recovery_Connection_Repair.apk
+          if gh release view revvl-recovery-connection-repair >/dev/null 2>&1; then
+            gh release upload revvl-recovery-connection-repair REVVL_Recovery_Connection_Repair.apk --clobber
+          else
+            gh release create revvl-recovery-connection-repair REVVL_Recovery_Connection_Repair.apk --title "REVVL Recovery — Connection Repair" --notes "Native dashboard on 8788; explicit rig engine diagnostic distinguishes Android and old Character Lab services on 8770; Episode 2 and cast photo counts in diagnostics. Existing Chrome browser data remains on its origin. Back up the full project before making Android app installation changes. Android debug APK signatures can conflict with previous installs."
+          fi
       - name: Upload debug APK
         if: success()
         uses: actions/upload-artifact@v4
