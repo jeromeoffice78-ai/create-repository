@@ -47,10 +47,7 @@ jobs:
             adb install -r revvl-launcher/app/build/outputs/apk/debug/app-debug.apk
             adb shell am start -W -n com.revvl.supertablet.recovery/com.revvl.supertablet.MainActivity
             adb forward tcp:18788 tcp:8788
-            for i in $(seq 1 25); do
-              if curl -fsS -D /tmp/revvl-headers.txt -o /tmp/revvl-home.html http://127.0.0.1:18788/REVVL_Super_Tablet_v2.html; then break; fi
-              sleep 2
-            done
+            for i in $(seq 1 25); do if curl -fsS -D /tmp/revvl-headers.txt -o /tmp/revvl-home.html http://127.0.0.1:18788/REVVL_Super_Tablet_v2.html; then break; fi; sleep 2; done
             grep -q '200 OK' /tmp/revvl-headers.txt
             grep -q 'X-REVVL-Server: REVVL-RECOVERY/3.5' /tmp/revvl-headers.txt
             grep -q 'REVVL Recovery v3.5' /tmp/revvl-home.html
