@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>REVVL · Offline 3D Character Engine</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,Roboto,sans-serif;background:#091727;color:#eaf6ff}
+*{box-sizing:border-box}body{margin:0;padding:16px}main{max-width:1070px;margin:0 auto}
+h1{font-size:clamp(22px,3.5vw,30px);margin:6px 0 11px}h2{font-size:17px;margin:0 0 10px}
+p{line-height:1.52;color:#b8d0dc;margin:9px 0}small{color:#aac3d1}a{color:#9ae6c8}
+.panel{background:#112b3e;border:1px solid #2f5367;border-radius:12px;padding:15px;margin-top:13px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:14px}
+label{display:block;font-size:13px;font-weight:650;margin:10px 0 5px}
+input[type=file],select{width:100%;border:1px solid #436a7b;border-radius:9px;background:#0b2030;color:#f6ffff;padding:11px;min-height:44px}
+button{background:#166d5c;border:1px solid #3a9f84;border-radius:9px;padding:11px 14px;color:white;font-weight:700;cursor:pointer;min-height:44px;margin:5px 5px 4px 0}
+button:disabled{opacity:.5;cursor:default}.secondary{background:#20465d;border-color:#537b8e}
+#portrait{display:none;max-width:100%;max-height:270px;object-fit:contain;border-radius:9px;border:1px solid #456;background:#091727}
+#model{display:block;width:100%;height:310px;background:#081928;border-radius:10px;touch-action:pan-y}
+#status{padding:12px;border-radius:9px;background:#0a2130;min-height:50px;white-space:pre-wrap}
+.note{border-left:3px solid #d8ad68;padding:10px;background:#2c281f;border-radius:6px}
+.pill{display:inline-block;border:1px solid #3d806e;border-radius:40px;padding:5px 11px;color:#97efce;font-size:13px}
+#downloads{display:none}
+</style></head>
+<body><main>
+<span class="pill">Local engine on 127.0.0.1:8770 · No Termux required</span>
+<h1>REVVL 3D Character Creator</h1>
+<p>Use the approved portrait already saved in your REVVL Recovery cast, or select its original photo from your tablet. Generate a <strong>real skinned 3D GLB draft with 22 joints and three skeletal animation clips</strong>, ready for further modeling in Blender.</p>
+<p class="note"><strong>Identity warning:</strong> This standalone engine uses a curved photo projection on a generic 3D head. It is NOT a photorealistic likeness reconstruction, an exact 3D scan, or a finished character. Facial morphs, precise lip-sync and autonomous acting still require additional work. The original portrait is embedded unchanged.</p>
+<div class="grid">
+ <section class="panel">
+  <h2>1. Approved character reference</h2>
+  <label for="cast">Season 1 character</label>
+  <select id="cast"><option>Warren Williams</option><option>Detective Khalil Ahmed Bey</option><option>Michael Thacker</option><option>Detective Nikki P</option><option>Pookie Hillman</option><option>Antonio Henry</option><option>Joshua Caesar</option><option>Fabian</option></select>
+  <label for="photo">Original approved image (optional if already in Drama Studio)</label>
+  <input type="file" id="photo" accept="image/jpeg,image/png">
+  <p id="photo-status">Checking whether your approved photo is available…</p>
+  <img id="portrait" alt="Selected approved character reference">
+  <div><button type="button" id="generate">Generate rigged GLB draft</button><button type="button" id="reload-photo" class="secondary">Check saved photo</button></div>
+  <p class="note" style="margin-top:12px">Keep your original Drama Studio project in Recovery v3.5. This companion never clears it or replaces cast photos.</p>
+ </section>
+ <section class="panel">
+  <h2>2. Real 3D geometry preview</h2>
+  <canvas id="model" aria-label="Rotating 3D unapproved body rig draft"></canvas>
+  <p><small>Rotating geometric preview of the model's body. Uploaded face image is embedded in the exported GLB; the preview does not display face texture or play skeletal animations.</small></p>
+  <div id="status" role="status" aria-live="polite">Loading the built-in 3D rig model…</div>
+  <div id="downloads">
+   <button type="button" id="download-glb">Download rigged GLB</button>
+   <button type="button" id="download-qa" class="secondary">Download QA report</button>
+  </div>
+ </section>
+</div>
+<section class="panel">
+<h2>3. Production requirements still outstanding</h2>
+<p>For each actor: capture additional approved frontal/side references; reconstruct true head depth, hair, eyes and skin; verify identity from several camera angles; bind production-quality facial controls and phoneme timings; then render and inspect the completed episode. This basic rig draft is a usable starting asset, not evidence that these steps have passed.</p>
+<p><strong>Health check:</strong> <a href="/health" target="_blank" rel="noopener noreferrer">Read engine status</a>. <strong>Source:</strong> No paid Daz license or external photo service.</p>
+</section>
+</main>
+<script>
+'use strict';
+const $ = id=>document.getElementById(id);
+const allowedParents=new Set(['http://127.0.0.1:8788','http://127.0.0.1:8766']);
+const photoRequests=new Map();let counter=0,selectedData='',template=null,rigBlob=null,qaBlob=null;
+window.addEventListener('message',event=>{
+ if(!allowedParents.has(event.origin)||event.source!==parent)return;
+ const msg=event.data;
+ if(!msg||msg.type!=='REVVL_APPROVED_PHOTO_RESULT'||typeof msg.requestId!=='string')return;
+ const answer=photoRequests.get(msg.requestId);
+ if(answer){photoRequests.delete(msg.requestId);answer(typeof msg.data==='string'&&/^data:image\/(?:jpeg|png);base64,/.test(msg.data)?msg.data:null);}
+});
+function requestPhoto(name){
+ if(parent===window)return Promise.resolve(null);
+ const key='cast:'+name,id='rig-'+(++counter);
+ return new Promise(resolve=>{
+  let settled=false;
+  const done=data=>{if(settled)return;settled=true;photoRequests.delete(id);resolve(data)};
+  photoRequests.set(id,done);
+  setTimeout(()=>done(null),3200);
+  for(const origin of allowedParents){try{parent.postMessage({type:'REVVL_GET_APPROVED_PHOTO',key,requestId:id},origin);}catch(e){}}
+ });
+}
+function clearOutput(){rigBlob=null;qaBlob=null;$('downloads').style.display='none'}
+async function updatePhoto(){
+ clearOutput();
+ const file=$('photo').files[0];const name=$('cast').value;
+ if(file){
+  if(!['image/jpeg','image/png'].includes(file.type)||file.size>12_000_000){$('photo-status').textContent='Choose a JPG/PNG smaller than 12 MB';return}
+  const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(Error('Photo read failed'));r.readAsDataURL(file)});
+  selectedData=data;
+  showPhoto('Using selected tablet photo for '+name);
+ }else{
+  selectedData=await requestPhoto(name)||'';
+  showPhoto(selectedData?'Approved portrait received from REVVL Recovery: '+name:'No approved portrait transferred. Choose a JPG/PNG file from your tablet.');
+ }
+}
+function showPhoto(message){
+ $('photo-status').textContent=message;
+ const image=$('portrait');
+ if(selectedData){image.src=selectedData;image.style.display='block'}else{image.removeAttribute('src');image.style.display='none'}
+}
+function nameFile(value){return value.replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'').slice(0,65)||'character'}
+function parseGlb(bytes){
+ if(!(bytes instanceof Uint8Array)||bytes.length<32)throw Error('Missing rigged 3D template');
+ const dv=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+ if(dv.getUint32(0,true)!==0x46546C67||dv.getUint32(4,true)!==2||dv.getUint32(8,true)!==bytes.length)throw Error('Invalid GLB header');
+ const length=dv.getUint32(12,true);
+ if(dv.getUint32(16,true)!==0x4E4F534A||20+length+8>bytes.length)throw Error('GLB JSON chunk invalid');
+ const doc=JSON.parse(new TextDecoder().decode(bytes.slice(20,20+length)));
+ const binAt=20+length;
+ const binLength=dv.getUint32(binAt,true);
+ if(dv.getUint32(binAt+4,true)!==0x004E4942||binAt+8+binLength>bytes.length)throw Error('GLB binary chunk invalid');
+ return {doc,bin:bytes.slice(binAt+8,binAt+8+binLength)};
+}
+function u32(dataView,at,val){dataView.setUint32(at,val,true)}
+function encodeGlb(doc,bin){
+ const jsonData=new TextEncoder().encode(JSON.stringify(doc));
+ const jsize=Math.ceil(jsonData.length/4)*4,bsize=Math.ceil(bin.length/4)*4;
+ const all=new Uint8Array(12+8+jsize+8+bsize);
+ const dv=new DataView(all.buffer);u32(dv,0,0x46546C67);u32(dv,4,2);u32(dv,8,all.length);
+ u32(dv,12,jsize);u32(dv,16,0x4E4F534A);all.set(jsonData,20);all.fill(32,20+jsonData.length,20+jsize);
+ u32(dv,20+jsize,bsize);u32(dv,24+jsize,0x004E4942);all.set(bin,28+jsize);
+ return all;
+}
+function readAccess(parsed,id){
+ const acc=parsed.doc.accessors[id],view=parsed.doc.bufferViews[acc.bufferView];
+ if(acc.componentType!==5126||acc.type!=='VEC3')throw Error('Unexpected preview vertex format');
+ const off=view.byteOffset+(acc.byteOffset||0), stride=view.byteStride||12;
+ const d=new DataView(parsed.bin.buffer,parsed.bin.byteOffset,parsed.bin.byteLength);const out=[];
+ for(let i=0;i<acc.count;i++){const at=off+i*stride;out.push(d.getFloat32(at,true),d.getFloat32(at+4,true),d.getFloat32(at+8,true))}
+ return out;
+}
+function readIndices(parsed,id){
+ const acc=parsed.doc.accessors[id],view=parsed.doc.bufferViews[acc.bufferView];
+ if(acc.type!=='SCALAR'||![5123,5125].includes(acc.componentType))throw Error('Unexpected index format');
+ const stride=acc.componentType===5123?2:4;
+ const at=view.byteOffset+(acc.byteOffset||0);const d=new DataView(parsed.bin.buffer,parsed.bin.byteOffset,parsed.bin.byteLength);const out=[];
+ for(let i=0;i<acc.count;i++)out.push(stride===2?d.getUint16(at+i*stride,true):d.getUint32(at+i*stride,true));
+ return out;
+}
+let previewAnimation=null;
+function startPreview(parsed){
+ const canvas=$('model'),gl=canvas.getContext('webgl',{antialias:true,alpha:false});
+ if(!gl){$('status').textContent='WebGL preview unavailable; GLB export can still work.';return}
+ const vs=`attribute vec3 aPosition;attribute vec3 aColor;varying vec3 vColor;uniform float uTurn;
+ void main(){float cs=cos(uTurn),sn=sin(uTurn);vec3 p=vec3(cs*aPosition.x+sn*aPosition.z,aPosition.y-1.05,-sn*aPosition.x+cs*aPosition.z);
+ float w=3.4-p.z;gl_Position=vec4(p.x*2.0,p.y*2.25,p.z*.26,w);vColor=aColor;}`;
+ const fs=`precision mediump float;varying vec3 vColor;void main(){gl_FragColor=vec4(vColor,1.0);}`;
+ function shader(type,code){const sh=gl.createShader(type);gl.shaderSource(sh,code);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(sh));return sh}
+ const prog=gl.createProgram();gl.attachShader(prog,shader(gl.VERTEX_SHADER,vs));gl.attachShader(prog,shader(gl.FRAGMENT_SHADER,fs));gl.linkProgram(prog);
+ if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw Error('Preview WebGL link failed');
+ gl.useProgram(prog);
+ const vertices=[],colors=[],indices=[];
+ for(const mesh of parsed.doc.meshes){
+  for(const prim of mesh.primitives){
+   const pos=readAccess(parsed,prim.attributes.POSITION),srcIndices=readIndices(parsed,prim.indices);
+   const base=vertices.length/3;vertices.push(...pos);
+   const color=parsed.doc.materials[prim.material]?.pbrMetallicRoughness?.baseColorFactor||[.6,.4,.3,1];
+   for(let i=0;i<pos.length/3;i++)colors.push(color[0],color[1],color[2]);
+   indices.push(...srcIndices.map(n=>n+base));
+  }
+ }
+ if(vertices.length/3>65000)throw Error('Preview model too complex');
+ const posBuffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,posBuffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vertices),gl.STATIC_DRAW);
+ const posLoc=gl.getAttribLocation(prog,'aPosition');gl.enableVertexAttribArray(posLoc);gl.vertexAttribPointer(posLoc,3,gl.FLOAT,false,0,0);
+ const colorBuffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,colorBuffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(colors),gl.STATIC_DRAW);
+ const colorLoc=gl.getAttribLocation(prog,'aColor');gl.enableVertexAttribArray(colorLoc);gl.vertexAttribPointer(colorLoc,3,gl.FLOAT,false,0,0);
+ const idxBuffer=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,idxBuffer);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(indices),gl.STATIC_DRAW);
+ gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);
+ const uTurn=gl.getUniformLocation(prog,'uTurn');
+ function draw(time){
+  const width=Math.max(1,Math.round(canvas.clientWidth*devicePixelRatio)),height=Math.max(1,Math.round(canvas.clientHeight*devicePixelRatio));
+  if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height}gl.viewport(0,0,width,height);
+  gl.clearColor(.035,.10,.17,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.uniform1f(uTurn,time*.00032);gl.drawElements(gl.TRIANGLES,indices.length,gl.UNSIGNED_SHORT,0);
+  previewAnimation=requestAnimationFrame(draw);
+ }
+ if(previewAnimation)cancelAnimationFrame(previewAnimation);
+ previewAnimation=requestAnimationFrame(draw);
+}
+async function makeRig(){
+ clearOutput();const btn=$('generate');btn.disabled=true;
+ try{
+  if(!selectedData)await updatePhoto();
+  if(!selectedData)throw Error('No approved portrait available. Choose the photo first.');
+  if(!/^data:image\/(?:jpeg|png);base64,/.test(selectedData))throw Error('Portrait must be JPG/PNG.');
+  const photoRes=await fetch(selectedData),photoBytes=new Uint8Array(await photoRes.arrayBuffer());
+  if(photoBytes.length<100||photoBytes.length>12_000_000)throw Error('Portrait must be 100 bytes–12 MB.');
+  if(!template)throw Error('Rigged GLB template not loaded. Tap Open 3D Engine app and return.');
+  const {doc,bin}=parseGlb(template);
+  if(!doc.skins||doc.skins[0].joints.length!==22||!doc.animations||doc.animations.length!==3)
+   throw Error('Rigged model skeleton validation failed');
+  const padded=Math.ceil(bin.length/4)*4;
+  const combined=new Uint8Array(padded+photoBytes.length);
+  combined.set(bin,0);combined.set(photoBytes,padded);
+  const idx=doc.bufferViews.length;
+  doc.bufferViews.push({buffer:0,byteOffset:padded,byteLength:photoBytes.length});
+  doc.images[0]={name:'Unmodified approved reference photo (curved projection)',mimeType:selectedData.startsWith('data:image/png;')?'image/png':'image/jpeg',bufferView:idx};
+  doc.buffers[0].byteLength=combined.length;
+  const person=$('cast').value;
+  doc.extras=Object.assign({},doc.extras,{character:person,approval:'UNAPPROVED PHOTO-PROJECTION DRAFT',source_photo_original_unchanged:true,
+    geometry:'Original 22-joint 3D rig with a generic curved photo projection; NOT an exact 3D facial likeness.',
+    audio_sync_verified:false,final_episode_ready:false});
+  const binary=encodeGlb(doc,combined);
+  if(parseGlb(binary).doc.skins[0].joints.length!==22)throw Error('GLB export validation failed');
+  const hashBytes=new Uint8Array(await crypto.subtle.digest('SHA-256',photoBytes));
+  const hash=[...hashBytes].map(x=>x.toString(16).padStart(2,'0')).join('');
+  const qa={format:'REVVL_3D_ENGINE_BASIC_DRAFT_V1',character:person,source_photo_sha256:hash,
+   structure_valid:true,real_glb_binary:true,skinned_skeleton_joints:22,skinned_mesh_count:doc.meshes.length,
+   available_animation_clips:doc.animations.map(a=>a.name),portrait_embedded_original_bytes:true,
+   facial_mesh:'generic curved 2D photo projection; no photo-specific 3D geometry reconstruction',
+   exact_likeness_verified:false,facial_morphs_verified:false,real_audio_lip_sync_verified:false,
+   release_blocked:true,warning:'DO NOT treat this as finished photorealistic character.'};
+  rigBlob=new Blob([binary],{type:'model/gltf-binary'});qaBlob=new Blob([JSON.stringify(qa,null,2)],{type:'application/json'});
+  $('downloads').style.display='block';$('status').textContent=person+': rigged 3D GLB draft generated. 22 skeletal joints, '+doc.animations.length+' motion clips, original photo embedded. Not an exact likeness. Save both files.';
+ }catch(e){$('status').textContent='Build failed: '+(e.message||String(e));}
+ finally{btn.disabled=false;}
+}
+function saveBlob(blob,name){if(!blob)return;const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),15000)}
+$('generate').addEventListener('click',makeRig);
+$('cast').addEventListener('change',()=>{$('photo').value='';updatePhoto()});
+$('photo').addEventListener('change',updatePhoto);
+$('reload-photo').addEventListener('click',updatePhoto);
+$('download-glb').addEventListener('click',()=>saveBlob(rigBlob,nameFile($('cast').value)+'_Rig_Draft.glb'));
+$('download-qa').addEventListener('click',()=>saveBlob(qaBlob,nameFile($('cast').value)+'_Rig_QA.json'));
+(async()=>{
+ try{
+  const res=await fetch('/template.glb',{cache:'no-store'});if(!res.ok)throw Error('Embedded GLB template unavailable');
+  template=new Uint8Array(await res.arrayBuffer());
+  const parsed=parseGlb(template);startPreview(parsed);
+  $('status').textContent='Local 3D engine ready. Choose a cast member and generate a rigged GLB draft.';
+  await updatePhoto();
+ }catch(e){$('status').textContent='3D engine startup error: '+(e.message||String(e));}
+})();
+</script></body></html>
