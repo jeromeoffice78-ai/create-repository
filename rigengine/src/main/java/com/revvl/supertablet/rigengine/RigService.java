@@ -125,7 +125,7 @@ public final class RigService extends Service {
         OutputStream out=c.getOutputStream();
         String header="HTTP/1.1 "+status+"\r\nContent-Type: "+mime+
                 "\r\nContent-Length: "+body.length+
-                "\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n";
+                "\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: http://127.0.0.1:8788\r\nVary: Origin\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n";
         out.write(header.getBytes(StandardCharsets.ISO_8859_1));
         if(writeBody)out.write(body);
         out.flush();
