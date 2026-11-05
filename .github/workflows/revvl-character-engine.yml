@@ -8,7 +8,7 @@ on:
       - ".github/workflows/revvl-character-engine.yml"
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   build-character-engine:
     runs-on: ubuntu-latest
@@ -69,6 +69,16 @@ jobs:
             grep -q "REVVL_GET_APPROVED_PHOTO" /tmp/rig-creator.html
             curl -fsS --max-time 8 -o /tmp/rig-template.glb http://127.0.0.1:18770/template.glb
             python -c "from pathlib import Path; b=Path('/tmp/rig-template.glb').read_bytes(); assert_ok=b[:4]==b'glTF' and len(b)>10000; print('Android template valid:',assert_ok,len(b),'bytes'); exit(0 if assert_ok else 1)"
+      - name: Publish stable direct APK download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp rigengine/build/outputs/apk/debug/rigengine-debug.apk REVVL_3D_Character_Engine_Android15.apk
+          if gh release view revvl-character-engine-v1 >/dev/null 2>&1; then
+            gh release upload revvl-character-engine-v1 REVVL_3D_Character_Engine_Android15.apk --clobber
+          else
+            gh release create revvl-character-engine-v1 REVVL_3D_Character_Engine_Android15.apk --title "REVVL 3D Character Engine v1" --notes "Standalone Android 15-validated 3D Character Engine companion for REVVL Recovery v3.5. Installs separately and serves the local creator at 127.0.0.1:8770. Basic GLB rig export; photorealistic identity reconstruction is not included."
+          fi
       - name: Upload standalone APK
         if: success()
         uses: actions/upload-artifact@v4
