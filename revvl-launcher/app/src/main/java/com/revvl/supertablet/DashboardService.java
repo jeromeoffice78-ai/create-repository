@@ -26,14 +26,14 @@ import java.util.concurrent.Executors;
 
 /**
  * A loopback-only, user-started foreground server.
- * Preserves Chrome origin http://127.0.0.1:8766 for existing saved projects.
+ * Uses an independent Chrome origin on port 8788 to avoid the original port 8766.
  * It does not execute any Termux command, access app credentials, or bind to Wi-Fi.
  */
 public final class DashboardService extends Service {
-    public static final String DASHBOARD = "http://127.0.0.1:8766/REVVL_Super_Tablet_v2.html";
+    public static final String DASHBOARD = "http://127.0.0.1:8788/REVVL_Super_Tablet_v2.html";
     private static final String TAG = "REVVL-DashboardService";
     private static final String CHANNEL = "revvl_dashboard";
-    private static final int NOTIFICATION_ID = 8766;
+    private static final int NOTIFICATION_ID = 8788;
     private final ExecutorService workers = Executors.newFixedThreadPool(3);
     private ServerSocket socket;
     private Thread acceptThread;
@@ -67,7 +67,7 @@ public final class DashboardService extends Service {
         Notification notification = new Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setContentTitle("REVVL Super Tablet")
-            .setContentText("Dashboard available locally at 127.0.0.1:8766")
+            .setContentText("Dashboard available locally at 127.0.0.1:8788")
             .setColor(Color.rgb(101,228,187))
             .setContentIntent(pi)
             .setOngoing(true).build();
@@ -90,15 +90,15 @@ public final class DashboardService extends Service {
         try (ServerSocket s = new ServerSocket()) {
             socket = s;
             s.setReuseAddress(true);
-            s.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 8766), 8);
-            Log.i(TAG, "Started loopback dashboard on 8766");
+            s.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 8788), 8);
+            Log.i(TAG, "Started loopback dashboard on 8788");
             while (!stopping && !s.isClosed()) {
                 Socket client = s.accept();
                 workers.execute(() -> handle(client));
             }
         } catch (BindException alreadyRunning) {
-            // Termux already owns 8766; let it serve the unchanged original page.
-            Log.i(TAG, "Port 8766 already served by Termux or another app");
+            // If another app owns 8788, stop safely without opening untrusted content.
+            Log.i(TAG, "Recovery port 8788 is in use; existing REVVL services are untouched");
             stopSelf();
         } catch (Exception e) {
             if (!stopping) Log.e(TAG,"Local server stopped",e);
@@ -121,7 +121,7 @@ public final class DashboardService extends Service {
             OutputStream out = c.getOutputStream();
             String headers = "HTTP/1.1 " + status + "\r\nContent-Type: " + type +
               "\r\nContent-Length: " + body.length +
-              "\r\nCache-Control: no-store\r\nX-REVVL-Server: REVVL-ONE-TAP/3.4\r\nX-Frame-Options: SAMEORIGIN\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n";
+              "\r\nCache-Control: no-store\r\nX-REVVL-Server: REVVL-RECOVERY/3.5\r\nX-Frame-Options: SAMEORIGIN\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n";
             out.write(headers.getBytes(StandardCharsets.ISO_8859_1));
             if (get && !"HEAD".equals(parts[0])) out.write(body);
             out.flush();
