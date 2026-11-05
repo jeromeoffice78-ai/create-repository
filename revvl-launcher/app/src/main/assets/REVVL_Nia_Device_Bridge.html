@@ -1,0 +1,35 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nia Device Bridge</title><style>
+:root{color-scheme:dark;font-family:system-ui;background:#081626;color:#eaf8ff}
+body{margin:0;padding:12px}main{max-width:850px;margin:auto}.panel{border:1px solid #31536b;border-radius:12px;padding:14px;margin:12px 0;background:#112537}
+h1{font-size:25px}p{color:#bed0df;line-height:1.5}button{padding:11px;min-height:44px;border:1px solid #468675;background:#164e49;color:white;border-radius:8px;margin:5px}
+button:disabled{opacity:.45}textarea,input{display:block;width:100%;box-sizing:border-box;background:#081626;color:#fff;border:1px solid #476272;border-radius:8px;padding:11px;margin:7px 0}
+textarea{height:105px}label{font-weight:600}#log{max-height:130px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#081626;padding:10px;border-radius:6px}
+small{color:#a5c5d5;display:block;margin:8px 0}
+</style></head><body><main><h1>Nia Universal Device Bridge</h1>
+<p>Connect your tablet to another compatible browser on the same Wi-Fi or hotspot. WebRTC encrypts the peer-to-peer text channel. The separate Nia Companion app is not connected yet; device controls, cameras, files, and microphones remain inaccessible.</p>
+<div class="panel"><strong id="status">Not connected</strong><p>On device 1, select Make offer, then copy Outgoing to device 2. On device 2, paste it into Incoming and select Answer offer. Copy its Outgoing back to device 1, paste into Incoming, and select Finish pairing.</p>
+<button id="offer">1 · Make offer</button><button id="answer">2 · Answer offer</button><button id="finish">3 · Finish pairing</button><button id="disconnect">Disconnect</button>
+<label for="incoming">Incoming pairing message</label><textarea id="incoming" spellcheck="false"></textarea>
+<label for="outgoing">Outgoing pairing message</label><textarea id="outgoing" readonly></textarea>
+<button id="copy">Copy outgoing message</button><small>Keep both pages open. Share pairing messages privately: they may include local network details.</small></div>
+<div class="panel"><h2>Connected device message test</h2><input id="message" maxlength="1000" placeholder="Write a message to the paired device"><button id="send" disabled>Send encrypted test message</button><div id="log">No messages yet.</div></div>
+<div class="panel"><h2>Current limits</h2><p>No public relay servers, satellite networking, or remote control. Local devices must permit peer connections. Nia AI voice/chat and multi-device account syncing still require separate authorized integrations.</p></div></main>
+<script>(function(){'use strict';
+let peer=null,channel=null,role='';const $=id=>document.getElementById(id);
+function status(s){$('status').textContent=s}
+function log(s){$('log').textContent+='\\n'+s;$('log').scrollTop=$('log').scrollHeight}
+function stop(){if(channel){try{channel.close()}catch(e){}}if(peer){try{peer.close()}catch(e){}}channel=null;peer=null;role='';$('send').disabled=true;status('Not connected')}
+function bind(c){channel=c;c.onopen=()=>{status('Encrypted connection ready');$('send').disabled=false;log('Peer connected')};c.onclose=()=>{status('Disconnected');$('send').disabled=true};c.onmessage=e=>{if(typeof e.data==='string')log('Peer: '+e.data.slice(0,1000))}}
+function newPeer(){if(typeof RTCPeerConnection!=='function')throw Error('WebRTC not supported');let p=new RTCPeerConnection({iceServers:[]});p.onconnectionstatechange=()=>{if(p.connectionState==='failed'||p.connectionState==='closed')status('Connection '+p.connectionState)};return p}
+function iceReady(p){if(p.iceGatheringState==='complete')return Promise.resolve();return new Promise((resolve,reject)=>{let done=false;let timer=setTimeout(()=>finish(Error('Local network candidate timeout')),15000);function finish(e){if(done)return;done=true;clearTimeout(timer);p.removeEventListener('icegatheringstatechange',check);e?reject(e):resolve()}function check(){if(p.iceGatheringState==='complete')finish()}p.addEventListener('icegatheringstatechange',check);check()})}
+function incoming(type){let raw=$('incoming').value;if(raw.length>180000||raw.length<20)throw Error('Invalid pairing message size');let m=JSON.parse(raw);if(!m||m.ver!=='REVVL_NIA_1'||m.type!==type||typeof m.sdp!=='string'||!m.sdp.startsWith('v=0')||m.sdp.length>170000)throw Error('Wrong pairing message');return m}
+function outgoing(type){$('outgoing').value=JSON.stringify({ver:'REVVL_NIA_1',type,sdp:peer.localDescription.sdp})}
+function busy(b){['offer','answer','finish'].forEach(id=>$(id).disabled=b)}
+$('offer').onclick=async()=>{busy(true);try{stop();peer=newPeer();role='offer';bind(peer.createDataChannel('nia-test'));await peer.setLocalDescription(await peer.createOffer());await iceReady(peer);outgoing('offer');status('Offer ready — copy to second device')}catch(e){stop();log(String(e))}finally{busy(false)}};
+$('answer').onclick=async()=>{busy(true);try{const m=incoming('offer');stop();peer=newPeer();role='answer';peer.ondatachannel=e=>bind(e.channel);await peer.setRemoteDescription({type:'offer',sdp:m.sdp});await peer.setLocalDescription(await peer.createAnswer());await iceReady(peer);outgoing('answer');status('Answer ready — copy to first device')}catch(e){stop();log(String(e))}finally{busy(false)}};
+$('finish').onclick=async()=>{busy(true);try{if(role!=='offer'||!peer)throw Error('Create an offer here first');let m=incoming('answer');await peer.setRemoteDescription({type:'answer',sdp:m.sdp});status('Connecting…')}catch(e){log(String(e));status('Pairing error')}finally{busy(false)}};
+$('disconnect').onclick=stop;
+$('copy').onclick=async()=>{if(!$('outgoing').value)return;try{await navigator.clipboard.writeText($('outgoing').value);log('Pairing message copied')}catch(e){$('outgoing').select();log('Pairing message selected; choose Copy')}};
+$('send').onclick=()=>{if(!channel||channel.readyState!=='open')return;let msg=$('message').value.trim().slice(0,1000);if(msg){channel.send(msg);log('You: '+msg);$('message').value=''}};
+addEventListener('pagehide',stop);
+})();</script></body></html>
