@@ -1,0 +1,47 @@
+name: REVVL Compute Center compile and package
+on:
+  push:
+    branches: [revvl-tab2-android-launcher]
+    paths:
+      - ".github/workflows/revvl-compute-fast-build.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout REVVL source
+        uses: actions/checkout@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Install Android 35 SDK
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"
+      - name: Check dashboard and compute assets
+        run: |
+          test -f revvl-launcher/app/src/main/assets/REVVL_Compute_Control.html
+          grep -q "Supercomputer Control Center" revvl-launcher/app/src/main/assets/REVVL_Compute_Control.html
+          grep -q "view-compute" revvl-launcher/app/src/main/assets/REVVL_Super_Tablet_v2.html
+          grep -q "REVVL-RECOVERY/3.6" revvl-launcher/app/src/main/java/com/revvl/supertablet/DashboardService.java
+      - name: Build Android package
+        run: gradle --project-dir revvl-launcher --no-daemon :app:assembleDebug
+      - name: Check Android APK contents
+        run: |
+          APK=revvl-launcher/app/build/outputs/apk/debug/app-debug.apk
+          unzip -l "$APK" | grep -q "assets/REVVL_Super_Tablet_v2.html"
+          unzip -l "$APK" | grep -q "assets/REVVL_Compute_Control.html"
+      - name: Upload signed debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: REVVL-Supercomputer-Center-v3-6
+          path: revvl-launcher/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
