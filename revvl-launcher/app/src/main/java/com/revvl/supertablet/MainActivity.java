@@ -26,6 +26,8 @@ import java.util.concurrent.Executors;
  */
 public final class MainActivity extends Activity {
     private static final String URL = DashboardService.DASHBOARD;
+    private static final String SERVER_ID = "REVVL-ONE-TAP/3.4";
+    private enum DashboardState { CURRENT, OCCUPIED, NOT_RUNNING }
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ExecutorService checks = Executors.newSingleThreadExecutor();
     private TextView status;
@@ -115,25 +117,38 @@ public final class MainActivity extends Activity {
         openTermux.setVisibility(View.GONE);
         status.setText("Checking your existing dashboard...");
         checks.execute(() -> {
-            boolean available=checkDashboard();
+            DashboardState result=inspectDashboard();
             ui.post(() -> {
                 if (id!=generation || isFinishing()) return;
-                if (available) onReady();
+                if (result == DashboardState.CURRENT) onReady();
+                else if (result == DashboardState.OCCUPIED) showPortConflict();
                 else startOwnServer(id);
             });
         });
     }
-    private boolean checkDashboard() {
+    private DashboardState inspectDashboard() {
         HttpURLConnection c=null;
         try {
             c=(HttpURLConnection)new URL(URL).openConnection();
             c.setConnectTimeout(850);
             c.setReadTimeout(950);
             c.setRequestMethod("GET");
-            int status=c.getResponseCode();
-            return status==200 && c.getContentType()!=null && c.getContentType().contains("text/html");
-        } catch (Exception e) { return false; }
-        finally { if (c!=null) c.disconnect(); }
+            int code=c.getResponseCode();
+            String server=c.getHeaderField("X-REVVL-Server");
+            if (code==200 && SERVER_ID.equals(server))
+                return DashboardState.CURRENT;
+            // Something is running on the original browser-storage origin, but this app
+            // cannot safely claim it or silently show outdated dashboard assets.
+            return DashboardState.OCCUPIED;
+        } catch (Exception e) {
+            return DashboardState.NOT_RUNNING;
+        } finally { if (c!=null) c.disconnect(); }
+    }
+    private void showPortConflict() {
+        ready=false;
+        status.setText("Another service is using 127.0.0.1:8766. It may be the older Termux dashboard. Stop that old server in Termux, then tap Retry. Do not uninstall or clear Chrome storage: your saved Drama Studio project uses this address.");
+        retry.setVisibility(View.VISIBLE);
+        openTermux.setVisibility(View.VISIBLE);
     }
     private void startOwnServer(int id) {
         status.setText("Starting your REVVL dashboard locally...");
@@ -157,10 +172,11 @@ public final class MainActivity extends Activity {
             return;
         }
         checks.execute(() -> {
-            boolean available=checkDashboard();
+            DashboardState result=inspectDashboard();
             ui.post(() -> {
                 if (id!=generation || isFinishing()) return;
-                if (available) onReady();
+                if (result==DashboardState.CURRENT) onReady();
+                else if (result==DashboardState.OCCUPIED) showPortConflict();
                 else ui.postDelayed(() -> poll(id,attempt+1),500);
             });
         });
