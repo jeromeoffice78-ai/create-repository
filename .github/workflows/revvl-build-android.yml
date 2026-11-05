@@ -1,38 +1,35 @@
 name: Build REVVL Tab 2 launcher APK
-
 on:
   push:
-    branches:
-      - revvl-tab2-android-launcher
+    branches: [revvl-tab2-android-launcher]
     paths:
       - "revvl-launcher/**"
       - ".github/workflows/revvl-build-android.yml"
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   build-debug:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Android launcher
         uses: actions/checkout@v4
-      - name: Java 17
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
-      - name: Gradle 8.9
+      - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Install Android platform 35
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Install SDK packages using preinstalled Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          command -v sdkmanager
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
       - name: Build debug APK
-        run: gradle -p revvl-launcher --no-daemon :app:assembleDebug
+        run: gradle --project-dir revvl-launcher --no-daemon :app:assembleDebug
       - name: Upload debug APK
         if: success()
         uses: actions/upload-artifact@v4
