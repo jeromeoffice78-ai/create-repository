@@ -26,7 +26,7 @@ import java.util.concurrent.Executors;
  */
 public final class MainActivity extends Activity {
     private static final String URL = DashboardService.DASHBOARD;
-    private static final String SERVER_ID = "REVVL-ONE-TAP/3.4";
+    private static final String SERVER_ID = "REVVL-RECOVERY/3.5";
     private enum DashboardState { CURRENT, OCCUPIED, NOT_RUNNING }
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ExecutorService checks = Executors.newSingleThreadExecutor();
@@ -79,14 +79,14 @@ public final class MainActivity extends Activity {
         l.setPadding(dp(23),dp(52),dp(23),dp(25));
         l.setBackgroundColor(Color.rgb(8,17,31));
         TextView title = new TextView(this);
-        title.setText("REVVL\nSUPER TABLET");
+        title.setText("REVVL\nSUPER TABLET\nRECOVERY");
         title.setTextSize(32);
         title.setTypeface(null,1);
         title.setGravity(Gravity.CENTER);
         title.setTextColor(Color.WHITE);
         l.addView(title,new LinearLayout.LayoutParams(-1,-2));
         TextView description=new TextView(this);
-        description.setText("One tap • Start dashboard • Open Chrome");
+        description.setText("Recovery app • Independent dashboard • Open Chrome");
         description.setGravity(Gravity.CENTER);
         description.setTextSize(15);
         description.setTextColor(Color.rgb(101,228,187));
@@ -115,7 +115,7 @@ public final class MainActivity extends Activity {
         ready=false; opened=false;
         retry.setVisibility(View.GONE);
         openTermux.setVisibility(View.GONE);
-        status.setText("Checking your existing dashboard...");
+        status.setText("Checking the independent recovery dashboard...");
         checks.execute(() -> {
             DashboardState result=inspectDashboard();
             ui.post(() -> {
@@ -146,12 +146,12 @@ public final class MainActivity extends Activity {
     }
     private void showPortConflict() {
         ready=false;
-        status.setText("Another service is using 127.0.0.1:8766. It may be the older Termux dashboard. Stop that old server in Termux, then tap Retry. Do not uninstall or clear Chrome storage: your saved Drama Studio project uses this address.");
+        status.setText("Port 8788 is occupied. Stop another recovery service and Retry. Your original REVVL app and browser project storage on port 8766 remain untouched.");
         retry.setVisibility(View.VISIBLE);
         openTermux.setVisibility(View.VISIBLE);
     }
     private void startOwnServer(int id) {
-        status.setText("Starting your REVVL dashboard locally...");
+        status.setText("Starting the independent REVVL recovery dashboard...");
         try {
             Intent i=new Intent(this, DashboardService.class);
             startForegroundService(i);
@@ -166,7 +166,7 @@ public final class MainActivity extends Activity {
     private void poll(int id, int attempt) {
         if (id!=generation || isFinishing()) return;
         if (attempt>38) {
-            status.setText("Dashboard did not start. Your original Termux setup is untouched.");
+            status.setText("Recovery dashboard did not start; your original REVVL and Termux apps are untouched.");
             retry.setVisibility(View.VISIBLE);
             openTermux.setVisibility(View.VISIBLE);
             return;
