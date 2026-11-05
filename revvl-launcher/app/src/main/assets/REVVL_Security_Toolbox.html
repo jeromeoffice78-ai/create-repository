@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REVVL · Security Toolbox</title>
+<style>
+:root{color-scheme:dark;font:15px system-ui,Roboto,sans-serif;background:#081623;color:#ecf6ff}
+*{box-sizing:border-box}body{margin:0;padding:13px}main{max-width:970px;margin:auto}
+h1{font-size:25px;margin:8px 0}h2{font-size:17px;margin:0 0 5px}
+p{line-height:1.55;color:#b5cbdd}small{color:#aec4d6}
+.card{background:#10283a;border:1px solid #33586c;border-radius:12px;padding:15px;margin:10px 0}
+.tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,265px),1fr));gap:11px}
+.tools .card{margin:0;display:flex;flex-direction:column;justify-content:space-between}
+button{min-height:47px;cursor:pointer;border-radius:9px;background:#18785e;border:1px solid #3eb895;color:white;font-weight:700;padding:11px 13px;width:100%;font-size:14px}
+button:disabled{opacity:.55;cursor:wait}button.secondary{background:#254b62;border-color:#527b91}
+input[type=text],input[type=password]{padding:12px;border:1px solid #52798a;border-radius:8px;background:#061825;color:white;width:100%;min-height:46px;font-size:15px}
+label{display:block;font-weight:700;margin:10px 0 7px}label.inline{display:flex;gap:9px;align-items:start;font-weight:500;color:#ccdeeb}
+label.inline input{margin-top:4px;accent-color:#30ba91}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:500px;overflow-y:auto;background:#041323;border:1px solid #315465;padding:14px;border-radius:10px;font-size:12px}
+details{margin-top:12px;border-top:1px solid #315465;padding-top:10px}summary{cursor:pointer;color:#8bd9cb;font-weight:700}
+.pill{font-size:12px;color:#8ce1bc;border:1px solid #38745e;padding:5px 10px;border-radius:30px;display:inline-block}
+.row{display:flex;flex-wrap:wrap;gap:10px}.row>*{flex:1;min-width:160px}
+.note{border-left:3px solid #ffc47f;padding:10px 13px;background:#27261f;border-radius:6px;color:#f5e7ca}
+#feedback{white-space:pre-wrap;min-height:35px}
+</style></head><body><main>
+<span class="pill">REVVL Super Tablet • Local security workspace</span>
+<h1>Security Toolbox</h1>
+<p>Tap a tool to perform a real, read-only diagnostic and see its results. Website checks use the REVVL Android service; file and password checks stay in Chrome on this tablet. This is an authorized security assessment toolkit, not an automatic break-in system.</p>
+<section class="card">
+<h2>Authorized target</h2>
+<label for="target">Website you own or have permission to check</label>
+<input id="target" type="text" placeholder="example.com" autocapitalize="none" autocomplete="off" spellcheck="false" maxlength="253">
+<label class="inline"><input id="authorize" type="checkbox"><span>I own this website or have explicit permission for these diagnostic requests.</span></label>
+<small>Only public HTTPS domain names are accepted. The toolkit blocks IP addresses, private networks, port ranges, and unapproved scanning.</small>
+</section>
+<section class="tools" aria-label="Tap-to-run tools">
+<div class="card"><div><h2>DNS Inspector</h2><p>Resolve the website's public IPv4 and IPv6 records.</p></div><button data-tool="dns">Run DNS Inspector</button><details><summary>Instructions</summary><p>Enter your approved domain above, check authorization, and tap Run. Read A (IPv4) and AAAA (IPv6) addresses in the results. DNS records are not vulnerability findings.</p></details></div>
+<div class="card"><div><h2>TLS Certificate Audit</h2><p>Inspect HTTPS certificate issuer, validity dates, and fingerprint.</p></div><button data-tool="tls">Run TLS Audit</button><details><summary>Instructions</summary><p>Enter a public authorized hostname. Tap Run to establish a verified TLS connection. Review certificate expiry and issuer; report unexpected or expiring certificates to the site's administrator.</p></details></div>
+<div class="card"><div><h2>HTTP Security Headers</h2><p>Send one HTTPS HEAD request and list security header settings.</p></div><button data-tool="headers">Run Header Audit</button><details><summary>Instructions</summary><p>Enter the website hostname. Tap Run to inspect HSTS, CSP, X-Content-Type-Options, Referrer-Policy, Permissions-Policy and X-Frame-Options. Missing headers are review points and may have legitimate configuration reasons. This tool does not exploit websites.</p></details></div>
+<div class="card"><div><h2>REVVL Local Services</h2><p>Check your local dashboard, 3D Engine, and optional AI bridge.</p></div><button data-tool="local">Check Local Services</button><details><summary>Instructions</summary><p>Tap Run. This checks only ports 8788, 8770 and 8767 on this tablet. A successful connection means a listener exists; it does not validate all features.</p></details></div>
+<div class="card"><div><h2>File SHA-256 Fingerprint</h2><p>Verify the digital fingerprint of a file from Downloads, without uploading it.</p></div><button id="pick-file" class="secondary">Select File & Calculate Hash</button><input type="file" id="hash-file" hidden><details><summary>Instructions</summary><p>Tap Select File, choose a file from the tablet, and view its SHA-256 digest. Compare it with a publisher's official checksum to detect accidental or malicious file changes. Maximum file size: 32 MB.</p></details></div>
+<div class="card"><div><h2>Local Password Strength</h2><p>Estimate password quality without sending or saving text.</p><label for="pw">Sample password or passphrase</label><input id="pw" type="password" placeholder="Type a test passphrase" autocomplete="off"></div><button id="check-pw" class="secondary">Evaluate Locally</button><details><summary>Instructions</summary><p>Use a sample passphrase, not an important account password. Tap Evaluate and review length and character diversity. A length estimate cannot tell whether a password is breached; a password manager and MFA are recommended.</p></details></div>
+</section>
+<section class="card" aria-live="polite" aria-label="Results"><h2>Real execution results</h2>
+<div id="feedback">Choose a tool above. No requests have run yet.</div>
+<pre id="results" hidden></pre>
+<div class="row"><button class="secondary" id="download-report" disabled>Download report (JSON)</button><button class="secondary" id="clear-result">Clear result</button></div></section>
+<section class="card"><h2>Additional professional tools</h2><p>For advanced, authorized work, use the official tools on a supported computer or Linux installation: <a href="https://nmap.org/" target="_blank" rel="noopener noreferrer">Nmap</a>, <a href="https://www.wireshark.org/" target="_blank" rel="noopener noreferrer">Wireshark</a>, <a href="https://www.zaproxy.org/" target="_blank" rel="noopener noreferrer">OWASP ZAP</a>, and the <a href="https://owasp.org/www-project-web-security-testing-guide/" target="_blank" rel="noopener noreferrer">OWASP Web Security Testing Guide</a>. These links are educational resources; they do not install or launch those programs on the tablet.</p></section>
+<p class="note">Limitations: This dashboard does not do password cracking, unauthorized intrusion, exploit execution, credential collection, or Internet-wide scanning. The native tools are read-only and require a public domain or use only fixed REVVL localhost service ports.</p>
+</main><script>
+'use strict';
+const $=id=>document.getElementById(id);
+let latest=null;
+const buttons=[...document.querySelectorAll('[data-tool]')];
+function status(message){$('feedback').textContent=message}
+function show(data){
+ latest=data;$('results').textContent=JSON.stringify(data,null,2);$('results').hidden=false;
+ $('download-report').disabled=false;
+ status(data.error?'Diagnostic reported an error: '+data.error:'Completed: real results shown below.');
+}
+async function run(tool){
+ if(tool!=='local'&&!$('authorize').checked){status('Check the authorization box before running an Internet diagnostic.');return}
+ const target=$('target').value.trim();
+ if(tool!=='local'&&!target){status('Enter an authorized public domain first.');return}
+ buttons.forEach(b=>b.disabled=true);status('Running '+tool+' using the REVVL Android service...');
+ try{
+  const res=await fetch('/api/security',{method:'POST',cache:'no-store',
+   headers:{'Content-Type':'application/json'},body:JSON.stringify({tool,target})});
+  const data=await res.json();
+  show(data);
+ }catch(e){show({error:'Android security service unavailable. Open the installed REVVL Recovery application and use its updated dashboard. '+e.message})}
+ finally{buttons.forEach(b=>b.disabled=false)}
+}
+for(const b of buttons)b.addEventListener('click',()=>run(b.dataset.tool));
+$('pick-file').addEventListener('click',()=>$('hash-file').click());
+$('hash-file').addEventListener('change',async()=>{
+ const file=$('hash-file').files?.[0];if(!file)return;
+ if(file.size>33554432){show({error:'File is over the 32 MB local hashing limit.'});return}
+ status('Calculating local SHA-256...');
+ try{
+  const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',await file.arrayBuffer()));
+  const hash=[...digest].map(b=>b.toString(16).padStart(2,'0')).join('');
+  show({tool:'sha256',source:'Chrome local file; never uploaded',filename:file.name,size_bytes:file.size,sha256:hash});
+ }catch(e){show({error:'Hash failed: '+e.message})}
+ finally{$('hash-file').value=''}
+});
+$('check-pw').addEventListener('click',()=>{
+ const p=$('pw').value;const varied=[/[a-z]/,/[A-Z]/,/[0-9]/,/[^a-z0-9]/i].filter(r=>r.test(p)).length;
+ const score=p.length>=16&&varied>=2?'long and diverse':p.length>=12&&varied>=2?'moderate':'needs improvement';
+ show({tool:'password_quality',source:'local browser only',characters:p.length,character_classes:varied,assessment:score,
+  note:'Approximate composition check only; does not test password breach lists or true randomness.'});
+ $('pw').value='';
+});
+$('download-report').addEventListener('click',()=>{
+ if(!latest)return;
+ const blob=new Blob([JSON.stringify(latest,null,2)],{type:'application/json'});
+ const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='REVVL_Security_Results.json';
+ document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),3000);
+});
+$('clear-result').addEventListener('click',()=>{latest=null;$('results').hidden=true;$('results').textContent='';$('download-report').disabled=true;status('Results cleared. Choose another tool.')});
+</script></body></html>
