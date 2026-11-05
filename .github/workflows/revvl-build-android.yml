@@ -49,9 +49,13 @@ jobs:
             adb forward tcp:18788 tcp:8788
             for i in $(seq 1 25); do if curl -fsS -D /tmp/revvl-headers.txt -o /tmp/revvl-home.html http://127.0.0.1:18788/REVVL_Super_Tablet_v2.html; then break; fi; sleep 2; done
             grep -q '200 OK' /tmp/revvl-headers.txt
-            grep -q 'X-REVVL-Server: REVVL-RECOVERY/3.5' /tmp/revvl-headers.txt
-            grep -q 'REVVL Recovery v3.5' /tmp/revvl-home.html
-            echo "Recovery APK installed and served the correct dashboard on Android 15."
+            grep -q 'X-REVVL-Server: REVVL-RECOVERY/3.6' /tmp/revvl-headers.txt
+            grep -q 'REVVL Super Tablet v3.6' /tmp/revvl-home.html
+            curl -fsS -D /tmp/revvl-compute-headers.txt -o /tmp/revvl-compute.html http://127.0.0.1:18788/REVVL_Compute_Control.html
+            grep -q '200 OK' /tmp/revvl-compute-headers.txt
+            grep -q 'Supercomputer Control Center' /tmp/revvl-compute.html
+            grep -q 'X-REVVL-Server: REVVL-RECOVERY/3.6' /tmp/revvl-compute-headers.txt
+            echo "REVVL v3.6 dashboard and compute console served correctly on Android 15."
       - name: Upload debug APK
         if: success()
         uses: actions/upload-artifact@v4
