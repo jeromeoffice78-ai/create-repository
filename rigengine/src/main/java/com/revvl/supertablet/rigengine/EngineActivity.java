@@ -14,6 +14,9 @@ import android.widget.TextView;
 import android.widget.LinearLayout;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 
@@ -44,15 +47,36 @@ public final class EngineActivity extends Activity {
         catch(Exception e){status.setText("Could not start service: "+e.getClass().getSimpleName());return;}
         worker.execute(()->{
             boolean ready=false;
+            boolean foreign=false;
             for(int n=0;n<15&&alive&&!ready;n++){
                 HttpURLConnection conn=null;
-                try{conn=(HttpURLConnection)new URL("http://127.0.0.1:8770/health").openConnection();conn.setConnectTimeout(600);conn.setReadTimeout(600);
-                    ready=conn.getResponseCode()==200 && "application/json; charset=utf-8".equals(conn.getContentType());
+                try{
+                    conn=(HttpURLConnection)new URL("http://127.0.0.1:8770/health").openConnection();
+                    conn.setConnectTimeout(600);conn.setReadTimeout(600);
+                    if(conn.getResponseCode()==200){
+                        String mime=conn.getContentType();
+                        if(mime!=null&&mime.startsWith("application/json")){
+                            try(InputStream in=conn.getInputStream();ByteArrayOutputStream out=new ByteArrayOutputStream()){
+                                byte[] b=new byte[512];int count;
+                                while(out.size()<4096&&(count=in.read(b))!=-1)out.write(b,0,count);
+                                String body=out.toString(StandardCharsets.UTF_8.name());
+                                ready=body.contains("\\"service\\":\\"REVVL Native 3D Character Engine\\"")
+                                    &&body.contains("\\"animation_clips\\":3")
+                                    &&body.contains("\\"ok\\":true");
+                                if(!ready)foreign=true;
+                            }
+                        } else foreign=true;
+                    }else foreign=true;
                 }catch(Exception ignored){}finally{if(conn!=null)conn.disconnect();}
+                if(foreign)break;
                 if(!ready)try{Thread.sleep(350);}catch(InterruptedException e){Thread.currentThread().interrupt();break;}
             }
-            final boolean result=ready;
-            ui.post(()->{if(alive)status.setText(result?"✓ Engine ready. Open Creator or return to Recovery.":"Port 8770 is not available. If the old Termux creator is running, stop only that service and tap Start again.");});
+            final boolean result=ready, other=foreign;
+            ui.post(()->{if(alive)status.setText(result
+                ?"✓ Native 3D Character Engine verified on port 8770. Open Creator or return to Recovery."
+                :other
+                    ?"Another Character Lab service is using port 8770. Native engine NOT verified. Stop the older Termux rig service, then tap Start/Restart, or keep using the older Lab for unapproved model review."
+                    :"Port 8770 is unavailable. Tap Start / Restart, then check Android notifications for a service error.");});
         });
     }
     @Override public void onDestroy(){alive=false;worker.shutdownNow();super.onDestroy();}
